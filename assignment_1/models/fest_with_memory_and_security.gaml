@@ -42,7 +42,9 @@ species SecurityGuard skills: [moving] {
 		InformationCenter infoCenter <- InformationCenter closest_to(location);
 		list<Guest> guestList <- Guest at_distance(15);
 		Guest badGuest <- guestList first_with (each.isBad() = true);
-		do captureBadGuest(badGuest);
+		if (badGuest != nil) {
+			do captureBadGuest(badGuest);
+		}
 	}
 	
 	reflex capture when: target != nil {
