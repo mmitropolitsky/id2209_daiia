@@ -1,0 +1,5 @@
+.cache/*
+.metadata/*
+*.gama*
+*.built_in_models*
+/*/.project
