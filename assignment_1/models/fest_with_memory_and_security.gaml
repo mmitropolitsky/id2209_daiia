@@ -50,7 +50,7 @@ species SecurityGuard skills: [moving] {
 	reflex capture when: target != nil {
 		do goto target: target;
 		
-		if (target != nil and target.isBad()) {
+		if (target.isBad()) {
 			ask target {
 				write "killing target" + self.name;
 				do die;
