@@ -15,6 +15,7 @@ global {
 	int numberOfGuests <- 10;
 	
 	point informationCenterLocation <- {50.0, 50.0};
+	point prisonLocation <- {100.0, 100.0};
 	
 	float hungerThreshold <- 20.0;
 	float thirstThreshold <- 20.0;
@@ -26,6 +27,7 @@ global {
 		create FoodStore number: 2;
 		create DrinksStore number: 2;
 		create SecurityGuard number: 1;
+		create Prison number: 1;
 	}
 }
 
@@ -37,45 +39,53 @@ species SecurityGuard skills: [moving] {
 	rgb guardColor <- #black;
 	point targetPoint <- nil;
 	Guest capturedGuest <- nil;
+	Prison prison <- Prison closest_to(location);
 	
 	reflex wait when: targetPoint = nil {
 		InformationCenter infoCenter <- InformationCenter closest_to(location);
 		list<Guest> guestList <- Guest at_distance(15);
 		Guest badGuest <- guestList first_with (each.isBad() = true);
 		if (badGuest != nil) {
+			write self.name + ": entering capture bad guest action: " + badGuest.name;
 			do captureBadGuest(badGuest);
 		}
 	}
 	
 	reflex capture when: capturedGuest != nil {
+		write self.name + " capturing target " + capturedGuest.name;
 		do goto target: capturedGuest;
 		
 		if (capturedGuest.isBad() and self distance_to(capturedGuest) < 3) {
 			ask capturedGuest {
-				write "killing target" + self.name;
-				do die;
+				// escort to prison
+				write "bringing target to prison " + self.name;
+				status ("Now " + self.name + " will stay in prison! - said " + myself.name) color: #yellow;
+				self.targetPoint <- prisonLocation;
+				self.timeInPrison <- 10;
+				myself.targetPoint <- prisonLocation;
+//				do goto target: myself.prison;
 			}
 		}
 	}
 
 	action captureBadGuest(Guest badGuest) {
 		if (self != nil and badGuest != nil) {
-			write self.name + ": here at capture bad guest action of guard for guest: " + badGuest.name;
+			 write self.name + ": here at capture bad guest action of guard for guest: " + badGuest.name;
 			capturedGuest <- badGuest;
 		}
-		
-//		do goto target: badGuest;
-		
-//		write self.name + ": here at capture after goto for guest: " + badGuest.name;
-//		if (badGuest != nil and badGuest.isBad) {
-//			ask badGuest {
-//				do die;
-//			}
-//		}
 	}
 	
 	reflex moveToTarget when: targetPoint != nil {
 		do goto target:targetPoint;
+		if (location = targetPoint) {
+			targetPoint <- nil;
+		}
+	}
+	
+	reflex getOutOfPrison when: location = prisonLocation {
+		write self.name + " in prison and should go out to capture other bad guys";
+		capturedGuest <- nil;
+		targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
 	}
 	
 	aspect default {
@@ -104,9 +114,7 @@ species Guest skills: [moving] {
 	list<FoodStore> visitedFoodStores <- [];
 	list<DrinksStore> visitedDrinksStores <- [];
 	
-	
-	
-	
+	int timeInPrison <- 0;
 	point targetPoint <- nil;
 
 	reflex dance when: targetPoint = nil {
@@ -130,32 +138,32 @@ species Guest skills: [moving] {
 			if (thirst >= thirstThreshold) {
 				thirsty <- true;
 				myColor <- #green;
-				write self.name + ": I am thirsty!";
+				// write self.name + ": I am thirsty!";
 				
 				if (!empty(visitedDrinksStores) and !feelingAdventurous) {
-					write self.name + "i have visited some stores and am not adventurours.";
+					// write self.name + "i have visited some stores and am not adventurours.";
 					int visitedStoreIndex <- rnd(0,length(visitedDrinksStores) - 1);
-					write self.name + "visited drinks store index is: " + visitedStoreIndex;
+					// write self.name + "visited drinks store index is: " + visitedStoreIndex;
 					targetPoint <- visitedDrinksStores[visitedStoreIndex].location;
 				} else {
-					write self.name + "do not know any drinks store or feelina adventurous is true: " + feelingAdventurous; 
+					// write self.name + "do not know any drinks store or feelina adventurous is true: " + feelingAdventurous; 
 					targetPoint <- informationCenterLocation;	
 				}
 			} else if (hunger >= hungerThreshold) {
 				hungry <- true;
 				myColor <- #purple;
-				write self.name + ": I am hungry!";
+				// write self.name + ": I am hungry!";
 				
 				if (!empty(visitedFoodStores) and !feelingAdventurous) {
 					int visitedFoodStoreIndex <- rnd(0,length(visitedFoodStores) - 1);
-					write self.name + "visited food store index is: " + visitedFoodStoreIndex;
+					// write self.name + "visited food store index is: " + visitedFoodStoreIndex;
 					targetPoint <- visitedFoodStores[visitedFoodStoreIndex].location;
 				} else {
-					write self.name + "do not know any food store or feelina adventurous is true: " + feelingAdventurous;
+					// write self.name + "do not know any food store or feelina adventurous is true: " + feelingAdventurous;
 					targetPoint <- informationCenterLocation;	
 				}
 			} else if (guestToBeReported != nil) {
-				write self.name + "going to report obnoxious person: " + guestToBeReported.name;
+				// write self.name + "going to report obnoxious person: " + guestToBeReported.name;
 				isReporting <- true;
 				targetPoint <- informationCenterLocation;
 				
@@ -172,23 +180,24 @@ species Guest skills: [moving] {
 		do goto target:targetPoint;
 	}
 	
-	reflex enterStore when: targetPoint != nil and location distance_to(targetPoint) < 1 {
+	reflex enterPlace when: targetPoint != nil and location distance_to(targetPoint) < 1 {
 		InformationCenter infoCenter <- InformationCenter closest_to(location);
 		DrinksStore drinkStore <- DrinksStore closest_to(location);
 		FoodStore foodStore <- FoodStore closest_to(location);
 		SecurityGuard guard <- infoCenter.getGuard();
+		Prison prison <- Prison closest_to(location);
 		
 		if (infoCenter != nil and infoCenter.location = targetPoint) {
-			write "Here in info center!";
+			// write "Here in info center!";
 			if (thirsty = true) {
 				list<DrinksStore> drinkStoresList <- infoCenter.getDrinksStores();
 				int drinkStoreIndex <- rnd(0,length(drinkStoresList) - 1);
-				write "store index: " + drinkStoreIndex;
+				// write "store index: " + drinkStoreIndex;
 				targetPoint <- drinkStoresList[drinkStoreIndex].location;
 			} else if (hungry = true) {
 				list<FoodStore> foodStoresList <- infoCenter.getFoodStores();
 				int foodStoreIndex <- rnd(0, length(foodStoresList) - 1);
-				write "food store index: " + foodStoreIndex;
+				// write "food store index: " + foodStoreIndex;
 				targetPoint <- foodStoresList[foodStoreIndex].location;
 			} else if (isReporting = true) {
 				
@@ -199,13 +208,13 @@ species Guest skills: [moving] {
 			
 			infoCenter <- nil;
 		} else if (drinkStore != nil and drinkStore.location = targetPoint) {
-			write "Here in reflex drink store";
+			// write "Here in reflex drink store";
 			// add store to memory
 			if(!(visitedDrinksStores contains drinkStore)) {
 				add drinkStore to: visitedDrinksStores;	
 			}
 			
-			write "Here in asking the drink store";
+			// write "Here in asking the drink store";
 			thirst <- 0.0;
 			targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
 			myColor <- #red;
@@ -213,24 +222,25 @@ species Guest skills: [moving] {
 			
 			drinkStore <- nil;
 		} else if (foodStore != nil and foodStore.location = targetPoint) {
-			write "Here in reflex food store";
+			// write "Here in reflex food store";
 			// add store to memory
 			if(!(visitedFoodStores contains foodStore)) {
 				add foodStore to: visitedFoodStores;	
 			}
 			
-			write "Here in asking the food store";
+			// write "Here in asking the food store";
 			hunger <- 0.0;
 			targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
 			myColor <- #red;
 			hungry <- false;
 			
 			foodStore <- nil;
-		} else if (guard != nil and guard.location = targetPoint and guestToBeReported != nil) {
-			write self.name + ": Here near security gueard";
+		} else if (targetPoint != prisonLocation and guard != nil and guard.location = targetPoint) {
+			 write self.name + ": Here near security gueard";
 			
 			ask guard {
 				do captureBadGuest(myself.guestToBeReported);
+//				do goto target: myself.guestToBeReported;
 				myself.speed <- 10.0 #km/#h;
 				myself.targetPoint <- myself.guestToBeReported.location;
 			}
@@ -239,6 +249,18 @@ species Guest skills: [moving] {
 			guestToBeReported <- nil;
 			guard <- nil;
 //			targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
+		} else if (prison != nil and prison.location = targetPoint) {
+			write self.name + " is in prison";
+			self.isObnoxious <- false;
+			if (timeInPrison > 0) {
+				write self.name + " time left in prison " + timeInPrison;
+				timeInPrison <- timeInPrison - 1;
+			} else {
+				write self.name + " going out of prison " + timeInPrison;
+				self.myColor <- #red;
+				self.speed <- 5 #km/#h;
+				targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
+			}
 		} else {
 			targetPoint <- nil;
 		} 
@@ -303,6 +325,18 @@ species DrinksStore parent: Store {
 	}
 }
 
+species Prison {
+	rgb myColor <- #grey;
+	
+	init {
+		location <- prisonLocation;
+	}
+	
+	aspect default {
+		draw square(5) at: location color: myColor;
+	}
+}
+
 experiment fest_experiment type: gui {
 	output {
 		display displayFest type: opengl {
@@ -311,6 +345,7 @@ experiment fest_experiment type: gui {
 			species FoodStore;
 			species DrinksStore;
 			species SecurityGuard;
+			species Prison;
 		}	
 	}
 }
