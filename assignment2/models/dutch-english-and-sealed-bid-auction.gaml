@@ -11,27 +11,33 @@ model dutchauction
 
 global {
 
+	list auctions <- ['Dutch', 'English'];
+	string DUTCH_AUCTION_TYPE <- 'Dutch';
+	string ENGLISH_AUCTION_TYPE <- 'English';
+	string AUCTION_ENDED <- 'auctionEnded';
 	init {
 		create Guest number: 20;
-		create Auctioneer number: 1;
+		create Auctioneer number: 2;
+		create EnglishAuctioneer number: 2;
 	}
 }
 
 /**
- * Auctioneer Species
+ * Dutch Auctioneer Species
  */
 species Auctioneer skills: [fipa] {
 	
 	rgb myColor <- #blue;
-	float initialPrice <- rnd(280, 300);
+	float initialPrice <- 350;
 	float currentPrice <- initialPrice;
-	float minPrice <- rnd(20, 40);
+	float minPrice <- 50;
 	list interestedParticipants;
 	
 	aspect default {
 		draw square(2) at: location color: myColor;
 	}
 	
+	//valid for Dutch and English
 	reflex read_interested_participants when: empty(interestedParticipants) and time mod 2 = 0 {
 		loop i over: mailbox {
 			int size <-  length(list(i.contents));
@@ -47,18 +53,20 @@ species Auctioneer skills: [fipa] {
 		list<Guest> possibleBuyers <- Guest at_distance(15);
 		if (possibleBuyers != nil and !empty(possibleBuyers)) {
 			write '(Time ' + time + '): ' +  name + ' is starting an auction ';
-			do start_conversation to: possibleBuyers protocol: 'fipa-contract-net' performative: 'inform' contents: ['Selling clothes'] ;
+			do start_conversation to: possibleBuyers protocol: 'fipa-contract-net' performative: 'inform' contents: ['Selling clothes', DUTCH_AUCTION_TYPE] ;
 		}
 	}
 	
-	reflex send_cfp_to_participants when: !empty(interestedParticipants) and time mod 2 = 0 {
+	// only for Dutch
+	reflex send_cfp_to_participants_dutch when: !empty(interestedParticipants) and time mod 2 = 0 {
 		write '(Time ' + time + '): ' + name + ' sends a cfp message to potential buyers with price ' + currentPrice;
 		// does the auction sell only 1 thing??
-		do start_conversation to: interestedParticipants contents: ['My price is', currentPrice] performative: 'cfp' protocol: 'fipa-contract-net' ;
-		currentPrice <- currentPrice - rnd(10, 30);	
+		do start_conversation to: interestedParticipants contents: ['My price is', currentPrice, DUTCH_AUCTION_TYPE] performative: 'cfp' protocol: 'fipa-contract-net' ;
+		currentPrice <- currentPrice - rnd(10, 50);	
 	}
 	
-	reflex receive_refuse_messages when: !empty(refuses) and time mod 2 = 0 {
+	// only for Dutch
+	reflex receive_refuse_messages_dutch when: !empty(refuses) and time mod 2 = 0 {
 		write '(Time ' + time + '): ' + name + ' receives refuse messages';
 		
 		loop r over: refuses {
@@ -73,7 +81,8 @@ species Auctioneer skills: [fipa] {
 		}
 	}
 	
-	reflex receive_propose_messages when: !empty(proposes) and time mod 2 = 0 {
+	// only for Dutch
+	reflex receive_propose_messages_dutch when: !empty(proposes) and time mod 2 = 0 {
 		list allProposes <- list(proposes);
 		write '(Time ' + time + '): ' + name + ' receives proposes messages ' + allProposes;
 		message proposalToAccept <- allProposes[0];
@@ -94,12 +103,6 @@ species Auctioneer skills: [fipa] {
 		interestedParticipants <- [];
 	}
 	
-	reflex receive_reject_proposals when: !empty(reject_proposals) {
-		loop r over: reject_proposals{
-			write '(Time ' + time + '): ' + name + ' receives a reject_proposal message from ' + agent(r.sender).name + ' with content ' + r.contents;
-		}
-	}
-	
 	action stopGuestFromParticipatingInAuction(Guest guest) {
 		guest.isInAuction <- false;
 		guest.myColor <- #red;
@@ -109,6 +112,112 @@ species Auctioneer skills: [fipa] {
 		loop i over: interestedParticipants {
 			do stopGuestFromParticipatingInAuction(i);
 		}
+	}
+}
+
+/**
+ * English Auctioneer Species
+ */
+species EnglishAuctioneer skills: [fipa] {
+	
+	rgb myColor <- #purple;
+	float minPrice <- 50;
+	float currentPrice <- minPrice;
+	float acceptablePrice <- 350;
+	list interestedParticipants;
+	message highestBidMessage;
+	
+	aspect default {
+		draw square(2) at: location color: myColor;
+	}
+	
+	//valid for Dutch and English
+	reflex read_interested_participants when: empty(interestedParticipants) and time mod 2 = 0 {
+		loop i over: mailbox {
+			int size <-  length(list(i.contents));
+			write '(Time ' + time + '): ' +  name + ' receives message with content: ' + string(i.contents);
+			if (size = 2) { // it is not info about reject, but a new interested customer
+				agent a <- agent(i.contents[1]);
+				add a to: interestedParticipants;
+			} 
+		}
+	}
+	
+	// only for English
+	reflex receive_refuse_messages_english when: !empty(refuses) and time mod 2 = 0 {
+		write '(Time ' + time + '): ' + name + ' receives refuse messages';
+		loop r over: refuses {
+			write '(Time ' + time + '): ' + name + ' receives a refuse message from ' + agent(r.sender).name + ' with content ' + r.contents;
+			remove r.sender from: interestedParticipants;
+			do stopGuestFromParticipatingInAuction(r.sender);
+		}
+		if (empty(proposes)) {
+			do endAuction;
+		}
+	}
+	
+	// only for English
+	reflex receive_propose_messages_english when: !empty(proposes) and time mod 2 = 0 {
+		list allProposes <- list(proposes);
+		write '(Time ' + time + '): ' + name + ' receives proposes messages ' + allProposes;
+		message highestBid <- allProposes with_max_of(each.contents[0] as float);
+		self.highestBidMessage <- highestBid;
+		write '(Time ' + time + '): ' + name + ' highest bid is ' + highestBid;
+		currentPrice <- highestBid.contents[0] as float;
+		if (currentPrice >= acceptablePrice) {
+			write '(Time ' + time + '): ' + name + ' accepts highest bid ' + highestBid;
+			do accept_proposal message: highestBid contents: ['Accepting proposal ' + highestBid];
+			write '(Time ' + time + '): ' + name + ' asks ' + highestBid.sender + ' to pay bid.';
+			do start_conversation to: [highestBid.sender] protocol: 'fipa-request' performative: 'request' contents: ['Please send me money'] ;
+			remove highestBid.sender from: interestedParticipants;
+			loop i over: interestedParticipants {
+				do start_conversation to: interestedParticipants protocol: 'fipa-contract-net' 
+					performative: 'inform' contents: ['Auction ended. Items sold to ' + highestBid.sender, AUCTION_ENDED] ;
+			}
+		}
+	}
+	
+	reflex read_agree_message when: !(empty(agrees)) {
+		write '(Time ' + time + '): ' + name + ' read agree messages';
+		loop a over: agrees {
+			write 'agree message with content: ' + string(a.contents);
+		}
+		do releaseAllGuestsFromAuction;
+		do stopGuestFromParticipatingInAuction(highestBidMessage.sender);
+		do endAuction;
+	}
+	
+	action releaseAllGuestsFromAuction {
+		loop i over: interestedParticipants {
+			do stopGuestFromParticipatingInAuction(i);
+		}
+	}
+	
+	action stopGuestFromParticipatingInAuction(Guest guest) {
+		guest.isInAuction <- false;
+		guest.myColor <- #red;
+	}
+	
+	action endAuction {
+		currentPrice <- minPrice;
+		write 'Setting list to empty ' + interestedParticipants;
+		interestedParticipants <- [];
+		write 'List is empty ' + interestedParticipants;
+	}
+	
+	reflex send_inform_to_participants when: empty(interestedParticipants) and time mod 2 = 0 {
+		list<Guest> possibleBuyers <- Guest at_distance(15);
+		if (possibleBuyers != nil and !empty(possibleBuyers)) {
+			write '(Time ' + time + '): ' +  name + ' is starting an auction ';
+			do start_conversation to: possibleBuyers protocol: 'fipa-contract-net' performative: 'inform' contents: ['Selling clothes', ENGLISH_AUCTION_TYPE] ;
+		}
+	}
+	
+	// only for English
+	reflex send_cfp_to_participants_english when: !empty(interestedParticipants) and empty(proposes) and time mod 2 = 0 {
+		write '(Time ' + time + '): ' + name + ' sends a cfp message to ' + interestedParticipants + ' with price ' + currentPrice;
+		// does the auction sell only 1 thing??
+		do start_conversation to: interestedParticipants contents: ['My price is', currentPrice, ENGLISH_AUCTION_TYPE] performative: 'cfp' protocol: 'fipa-contract-net' ;
 	}
 }
 
@@ -123,33 +232,56 @@ species Guest skills: [moving, fipa] {
 	}
 	
 	rgb myColor <- #red;
-	float acceptablePrice <- rnd(10, 200);
+	float acceptablePrice <- 320;
 	string interestedGenre <- 'clothes';
 	bool isInAuction <- false;
 	
 	reflex read_inform when: !empty(informs) and time mod 2 = 1 {
 		loop i over: informs {
 			write '(Time ' + time + '): ' + name + ' receives message with content: ' + (string(i.contents));
-			do participateInAuction;
-			do end_conversation message: i contents: ['Understood message from ' + agent(i.sender).name, self];
+			if (length(list(i.contents)) > 1 and i.contents[1] != AUCTION_ENDED) { // entering any type of auction
+				write '(Time ' + time + '): ' + name + ' will participate in auction';
+				do participateInAuction;
+				do end_conversation message: i contents: ['Understood message from ' + agent(i.sender).name, self];
+			} else {
+				do end_conversation message: i contents: ['Understood message from ' + agent(i.sender).name];
+			}
 		}
 	}
 	
 	reflex receive_cfp_from_auctioneer when: !empty(cfps) and time mod 2 = 1 {
+		write 'Test the error ' + cfps;
 		message proposalFromAuctioneer <- cfps[0];
-		float priceFromAuctioneer <- list(proposalFromAuctioneer.contents)[1] as float;
+		do handleCfpMessage(proposalFromAuctioneer);
+	}
+	
+	action handleCfpMessage(message proposalFromAuctioneer) {
+		float priceToPropose <- list(proposalFromAuctioneer.contents)[1] as float;
+		string auctionType <- proposalFromAuctioneer.contents[2];
 		write '(Time ' + time + '): ' + name + ' receives a cfp message from ' 
 			+ agent(proposalFromAuctioneer.sender).name;
-			
-		write 'Willing to pay ' + acceptablePrice;
-		// what should be the condition to understand an auction??
-		if (priceFromAuctioneer > acceptablePrice) {
+		write 'Acceptable price ' + acceptablePrice;
+		if (auctionType = ENGLISH_AUCTION_TYPE) {
+			priceToPropose <- priceToPropose + rnd(10, 50);
+		}
+		if (priceToPropose > acceptablePrice) {
 			write '(Time ' + time + '): ' + ' buyer ' + name + ' rejects offer';
 			do refuse message: proposalFromAuctioneer contents: ['Rejecting offer'];
 		} else {
-			write '(Time ' + time + '): ' + ' buyer ' + name + ' proposes price ' + acceptablePrice;
-			do propose message: proposalFromAuctioneer contents: [priceFromAuctioneer];
+			write 'Willing to pay ' + priceToPropose;
+			write '(Time ' + time + '): ' + ' buyer ' + name + ' proposes price ' + priceToPropose;
+			do propose message: proposalFromAuctioneer contents: [priceToPropose];
 		}
+	}
+	
+	reflex receive_requests when: !empty(requests) and time mod 2 = 1 {
+		message requestFromInitiator <- requests[0];
+		write '(Time ' + time + '): ' + ' buyer ' + name + ' pays request ' + requestFromInitiator;
+		write 'agree message';
+		do agree message: requestFromInitiator contents: ['I will'] ;
+		
+		write 'inform the initiator';
+		do inform message: requestFromInitiator contents: ['I have paid bid'] ;
 	}
 	
 	reflex dance when: !isInAuction {
@@ -158,7 +290,7 @@ species Guest skills: [moving, fipa] {
 	
 	action participateInAuction {
 		isInAuction <- true;
-		myColor <- #blue;
+		myColor <- #green;
 	}
 	
 	aspect default {
@@ -166,66 +298,12 @@ species Guest skills: [moving, fipa] {
 	}
 }
 
-species Auction skills: [fipa] {
-	
-	float initialPrice;
-	float minPrice;
-	float currentPrice;
-	list<Guest> interestedParticipants;
-	
-	action init(float vInitialPrice, float vMinPrice) {
-		self.initialPrice <- vInitialPrice;
-		self.minPrice <- vMinPrice;
-	}
-	
-	action send_inform_to_participants {
-		list<Guest> possibleBuyers <- Guest at_distance(15);
-		if (possibleBuyers != nil and !empty(possibleBuyers)) {
-			write '(Time ' + time + '): ' +  name + ' is starting an auction ';
-			do start_conversation to: possibleBuyers protocol: 'fipa-contract-net' performative: 'inform' contents: ['Selling clothes'] ;
-		}
-	}
-	
-	action read_interested_participants {
-		loop i over: mailbox {
-			int size <-  length(list(i.contents));
-			write '(Time ' + time + '): ' +  name + ' receives message with content: ' + string(i.contents);
-			if (size = 2) { // it is not info about reject, but a new interested customer
-				agent a <- agent(i.contents[1]);
-				add Guest(a) to: interestedParticipants;
-			} 
-		}
-	}
-	
-	action send_cfp_to_participants virtual: true;
-	
-}
-
-species DutchAuction parent: Auction {
-	
-	action send_cfp_to_participants {
-		write '(Time ' + time + '): ' + name + ' sends a cfp message to potential buyers with price ' + currentPrice;
-		do start_conversation to: interestedParticipants contents: ['My price is', currentPrice] performative: 'cfp' protocol: 'fipa-contract-net' ;
-		currentPrice <- currentPrice - rnd(10, 30);	
-	}
-	
-}
-
-species EnglishAuction parent: Auction {
-	
-	action send_cfp_to_participants {
-		write '(Time ' + time + '): ' + name + ' sends a cfp message to potential buyers with price ' + currentPrice;
-		do start_conversation to: interestedParticipants contents: ['My price is', currentPrice] performative: 'cfp' protocol: 'fipa-contract-net' ;
-	}
-	
-}
-
-
 experiment name type: gui {
 	output {
 		display displayFest type: opengl {
 			species Guest;
 			species Auctioneer;
+			species EnglishAuctioneer;
 		}	
 	}
 }

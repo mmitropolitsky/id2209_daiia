@@ -157,7 +157,7 @@ species Guest skills: [moving, fipa] {
 			write '(Time ' + time + '): ' + ' buyer ' + name + ' rejects offer';
 			do refuse message: proposalFromAuctioneer contents: ['Rejecting offer'];
 		} else {
-			write '(Time ' + time + '): ' + ' buyer ' + name + ' proposes price ' + acceptablePrice;
+			write '(Time ' + time + '): ' + ' buyer ' + name + ' proposes price ' + priceFromAuctioneer;
 			do propose message: proposalFromAuctioneer contents: [priceFromAuctioneer];
 		}
 	}
