@@ -8,7 +8,6 @@
 model dutchauction
 
 /* Insert your model definition here */
-
 global {
 
 	init {
@@ -112,8 +111,6 @@ species Auctioneer skills: [fipa] {
 	}
 }
 
-
-
 /**
  * Guest Species
  */
@@ -212,14 +209,11 @@ species DutchAuction parent: Auction {
 }
 
 species EnglishAuction parent: Auction {
-	
 	action send_cfp_to_participants {
 		write '(Time ' + time + '): ' + name + ' sends a cfp message to potential buyers with price ' + currentPrice;
 		do start_conversation to: interestedParticipants contents: ['My price is', currentPrice] performative: 'cfp' protocol: 'fipa-contract-net' ;
 	}
-	
 }
-
 
 experiment name type: gui {
 	output {

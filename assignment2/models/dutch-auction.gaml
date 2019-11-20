@@ -46,6 +46,7 @@ species Auctioneer skills: [fipa] {
 	
 	reflex send_inform_to_participants when: empty(interestedParticipants) and time mod 2 = 0 {
 		list<Guest> possibleBuyers <- Guest at_distance(15);
+		write "Possible buyers count: " + possibleBuyers;
 		if (possibleBuyers != nil and !empty(possibleBuyers)) {
 			write '(Time ' + time + '): ' +  name + ' is starting an auction ';
 			do start_conversation to: possibleBuyers protocol: 'fipa-contract-net' performative: 'inform' contents: ['Selling clothes'] ;
