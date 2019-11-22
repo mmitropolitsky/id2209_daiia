@@ -1,6 +1,6 @@
 /***
 * Name: testfipa
-* Author: Viktoriya
+* Author: Viktoriya and Milko
 * Description: 
 * Tags: Tag1, Tag2, TagN
 ***/
@@ -135,12 +135,18 @@ species Guest skills: [moving, fipa] {
 	
 	reflex read_inform when: !empty(informs) and time mod 2 = 1 {
 		loop i over: informs {
-			write '(Time ' + time + '): ' + name + ' receives message with content: ' + (string(i.contents));
-			if (i.contents[1] = interestedGenre) {
-				do participateInAuction(Auctioneer(i.sender).myColor);
-				do end_conversation message: i contents: ['Understood message from ' + agent(i.sender).name, self];
+			if (!self.isInAuction) {
+				write '(Time ' + time + '): ' + name + ' receives message with content: ' 
+					+ (string(i.contents)) + " from " + agent(i.sender).name;
+				if (i.contents[1] = interestedGenre) {
+					do participateInAuction(Auctioneer(i.sender).myColor);
+					do end_conversation message: i contents: ['Understood message from ' + agent(i.sender).name, self];
+				} else {
+					do end_conversation message: i contents: ['Not interested in offer from ' + agent(i.sender).name];
+				}
 			} else {
-				do end_conversation message: i contents: ['Not interested in offer from ' + agent(i.sender).name];
+				write '(Time ' + time + '): ' + name + ' is not participating in an auction offered by '  
+					+ agent(i.sender).name + 'due to already being in auction.';
 			}
 		}
 	}
