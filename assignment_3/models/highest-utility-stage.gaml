@@ -10,7 +10,7 @@ model highestutilitystage
 /* Insert your model definition here */
 global {
 	init {
-		create Guest number: 20;
+		create Guest number: 1;
 		create Stage number: 4;
 		
 	}
@@ -25,7 +25,17 @@ species Stage skills: [fipa] {
 	float sittingSpots;
 	float toiletsNearby;
 	
-	action hostAnAct {
+//	reflex startShow {
+//		do initializeShowParameters;
+//		list<Guest> allGuests <- Guest at_distance(100);
+//		if (allGuests != nil and !empty(allGuests)) {
+//			map<string, float> showParameters <- initializeShowParameters;
+//			write "Time (" + time + "): " + name + " is starting a new show.";
+//			do start_conversation to:  allGuests protocol: 'fipa-contract-net' performative: 'inform' contents: [showParameters] ;
+//		}
+//	}
+	
+	map<string, float> initializeShowParameters {
 		write "Time (" + time + "): " + name + " start hosting an act.";
 		lightShow <- rnd(0.1, 0.9);
 		speakers <- rnd(0.1, 0.9);
@@ -35,6 +45,8 @@ species Stage skills: [fipa] {
 		toiletsNearby <- rnd(0.1, 0.9);
 		write name + " parameters: lightShow " + lightShow + "; speakers: " + speakers + "; band: " + band
 			+ " ; fireworks: " + fireworks + "; sittingSpots: " + sittingSpots + "; toiletsNearby: " + toiletsNearby;
+		return map<string, float>("lightShow"::lightShow, "speakers"::speakers, "band"::band, 
+			"fireworks"::fireworks, "sittingSpots"::sittingSpots, "toiletsNearby"::toiletsNearby);
 	}
 	
 	rgb stageColor <- #green;
