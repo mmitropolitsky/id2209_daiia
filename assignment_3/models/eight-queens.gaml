@@ -20,13 +20,9 @@ global{
     			Queen q <- queensList[i];
     			q.row <- 0;
 
-    			q.column <- 0; //rnd(0, (boardSize - 1), 1);
+    			q.column <- rnd(0, (boardSize - 1), 1);
     			write 'first queen column ' + q.column;
-    			q.positioned <- true;
-  
-    			ask q {
-    				do setCell;
-    			}
+    			
     		} else {
     			Queen q <- queensList[i];
     			q.row <- i;
@@ -37,6 +33,12 @@ global{
     			q.location <- {0,0};
     		}
     	}
+    	
+    	//start the alg
+    	Queen q <- queensList[0];
+		ask q {
+			do moveToFreePosition(q.column);
+		}
     	
     }	
 }
@@ -53,49 +55,36 @@ species Queen skills: [fipa] {
 	int column;
 	bool positioned <- false;
 	bool isNotified <- false;
-	point previousPosition;
+	list<point> previousPositions;
 	
 	Queen predecessor;
 	Queen successor;
 	
-	reflex trackChessBoardOccupation {
-		loop cell over: ChessBoard {
-			write cell.name + ' occupation ' + cell.occupied;
-		}
-	}
-	
-	reflex notifySuccessor when: positioned {
-		if (successor != nil) {
-			write "Time(" + time + "): " + name + " notifies successor " + successor;
-			do start_conversation to: [successor] protocol: 'no-protocol' performative: 'inform' contents: ['Position'] ;
-		}
-	}
-	
-	reflex receiveNotificationWhenNotPositioned when: !empty(informs) and !positioned {
-//		write name + ' receieve notification when not positioned';
+	reflex receiveNotificationWhenNotPositioned when: !empty(informs) and !positioned and time mod 2  = 1 {
 		loop i over:informs {
 			if (i.sender = predecessor) {
-				write name + ' notified from ' + predecessor;
+				write name + ' notified from predecessor ' + predecessor;
+				do end_conversation message: i contents: ['Working on it'];
 				do occupyCells;
-			} else if (i.sender = successor) {
-//				write 'Wrong occurence in successor';
-				//TODO
 			}
 		}
 	}
 	
-	reflex receiveNotificationWhenPositioned when: !empty(informs) and positioned {
-//		write name + ' receieve notification when positioned';
+	reflex receiveNotificationWhenPositioned when: !empty(informs) and positioned and time mod 3 = 1 {
 		loop i over:informs {
 			if (i.sender = successor) {
-				write name + ' deoccupy cells';
-				do markCellsAsUnoccupied;
-				do occupyCells;
-			} else if (i.sender = predecessor) {
-//				write 'Wrong occurence in predecessor';
-				//TODO
+				write name + ' notified from successor ' + successor;
+				do end_conversation message: i contents: ['I will reposition'];
+				do repositionIfPossible;
 			}
 		}
+	}
+	
+	action repositionIfPossible {
+		write name + ' deoccupy cells';
+		positioned <- false;
+		do markCellsAsUnoccupied;
+		do occupyCells;
 	}
 	
 	action occupyCells {
@@ -104,32 +93,45 @@ species Queen skills: [fipa] {
 			ChessBoard cb <- ChessBoard grid_at {i, row};
 			write name + 'checking cell ' + cb + ' with occupation ' + cb.occupied;
 			// there is a free position on my row
-//			point currentPoint <- {i, row}; //ChessBoard[i, row] as point;
-			if (previousPosition != {i, row} and cb.occupied = 0) {
-				write name + 'My current position is (c,r): ' + column + ', ' + row + ". New possible position: " + {i, row}; 
-				location <- ChessBoard[i, row] as point;
-				column <- i;
-
-				positioned <- true;
-				previousPosition <- {i, row};
-				
-				write name + ' predecessor: ' + predecessor + '; successor: ' + successor + '; my row is: ' + row + "; my column is: " + column;
-				do markCellsAsOccupied;
+			if (!(previousPositions contains {i, row}) and cb.occupied = 0) {
+				do moveToFreePosition(i);
+				break;
 			}
 		}
+		
 		// there is no free position on my row
 		if (!positioned) {
 			if (predecessor != nil) {
 				write "Time(" + time + "): " + name + " notifies predecessor " + predecessor;
+				previousPositions <- [];
+				location <- {0,0};
 				do start_conversation to: [predecessor] protocol: 'no-protocol' performative: 'inform' contents: ['Reposition'] ;
 			}
+		}
+	}
+	
+	action moveToFreePosition(int i) {
+		write name + 'My current position is (c,r): ' + column + ', ' + row + ". New possible position: " + {i, row}; 
+		location <- ChessBoard[i, row] as point;
+		column <- i;
+
+		positioned <- true;
+		add {column, row} to: previousPositions;
+		
+		write name + ' predecessor: ' + predecessor + '; successor: ' + successor + '; my row is: ' + row + "; my column is: " + column;
+		do markCellsAsOccupied;
+		
+		//TODO check if the last element has been successfully positioned - then stop
+		if (successor != nil and !successor.positioned) {
+			write 'Successor ' + successor + ' position is ' + successor.positioned;
+			write "Time(" + time + "): " + name + " notifies successor " + successor;
+			do start_conversation to: [successor] protocol: 'no-protocol' performative: 'inform' contents: ['Position'] ;
 		}
 	}
 	
 	action markCellsAsOccupied {
 		loop i from: 0 to: boardSize - 1 step: 1 {
 			loop j from: 0 to: boardSize - 1 step: 1 {
-//				write "Checking i:" + i + ", j: " + j;
 				if (j != row and i != column) {
 					if (j = row) {
 						do doOccupy(i,j);
@@ -152,7 +154,6 @@ species Queen skills: [fipa] {
 	action doOccupy(int i, int j) {
 		ask ChessBoard grid_at {i, j} {
 			self.occupied <- self.occupied + 1;
-//        	do update_occupation;
         }
 	}
 	
@@ -184,8 +185,6 @@ species Queen skills: [fipa] {
 			if (self.occupied > 0) {
 				self.occupied <- self.occupied - 1;
 			}
-			
-//        	do update_occupation;
         }
 	}
 	
@@ -199,13 +198,17 @@ grid ChessBoard width: boardSize height: boardSize {
 	int occupied;
 	
 	reflex changeColor {
-		if (self.occupied = 1) {
+		if (self.occupied = 0) {
+			self.color <- #white;
+		} else if (self.occupied = 1) {
 			self.color <- #yellow;
 		} else if (self.occupied = 2) {
 			self.color <- #orange;
 		} else if (self.occupied = 3) {
 			self.color <- #red;	
-		}	
+		} else if (self.occupied >= 4) {
+			self.color <- #purple;
+		}
 	}
 }
 
