@@ -17,7 +17,7 @@ global {
 		create Band number: 4 returns: bands;
 		loop i from: 0 to: length(stages) - 1 step: 1 {
 			stages[i].actualBand <- bands[i];
-			bands[i].location <- stages[i].location;
+			bands[i].location <- {stages[i].location.x + 4, stages[i].location.y};
 		}
 	}
 }
@@ -121,6 +121,10 @@ species Stage skills: [fipa] {
 
 species Band skills: [fipa] {
 	int minAttendees <- rnd (1, 5, 1);
+	
+	aspect default {
+		draw cube(2) at: location color: #purple;
+	}
 }
 
 species Guest skills: [moving, fipa] {
@@ -191,6 +195,7 @@ experiment highestutilitystage_experiment type: gui {
 		display displayFest type: opengl {
 			species Guest;
 			species Stage;
+			species Band;
 		}	
 	}
 }
