@@ -1,6 +1,6 @@
 /***
 * Name: eightqueens
-* Author: Viktoriya
+* Author: Viktoriya and Milko
 * Description: 
 * Tags: Tag1, Tag2, TagN
 ***/
@@ -9,7 +9,7 @@ model eightqueens
 /* Insert your model definition here */
 
 global{
-    int boardSize <- 4;
+    int boardSize <- 12;
     
     init {
     	
