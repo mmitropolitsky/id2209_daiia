@@ -11,11 +11,16 @@ model festival
 
 global {
 	
+	string NO_MORE_BEER -> "I do not have more beer";
+	string BEER_IN_STOCK -> "Here you are!";
+	string SECURITY_GUARD_HEADING_TO_YOU <- "I will catch you!";
+	string SECURITY_GUARD_CAUGHT_YOU <- "Go to prison.";
+	
 	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest)};
     int amusedGuests update: DancingGuest count (each.happiness > 0.8) + ChillingGuest count (each.happiness > 0.8);
 	
-	int numberOfGuests <- 1;
-	int barsNum <- 1;
+	int numberOfGuests <- 5;
+	int barsNum <- 5;
 //	int stageNum <- 5;
 	int currentBarsNum -> {length(Bar)};
 	
@@ -24,14 +29,12 @@ global {
 	list<string> musicTypes <- ["rock", "pop", "jazz"];
 
 	init {
-		create DancingGuest number: numberOfGuests {
-			generous <- 0.9;
-		}
-		create ChillingGuest number: numberOfGuests;
+		create DancingGuest number: numberOfGuests;
+//		create ChillingGuest number: numberOfGuests;
 //		create Photographer number: numberOfGuests;
 		create Bar number: barsNum;
-//		create SecurityGuard number: numberOfGuests/5;
-//		create Prison number: 1;
+		create SecurityGuard number: numberOfGuests / 5;
+		create Prison number: 1;
 //		create Stage number: stageNum;
 	}
 }
@@ -46,18 +49,20 @@ species Guest skills: [moving, fipa] {
 	rgb myColor <- #red;
 	float happiness <- 0.0 with_precision 2;
 	float drunkness <- 0.0 with_precision 2;
-	float loudness <- rnd(0.0, 1.0) with_precision 2;
+	float loudness <- rnd(0.5, 1.0) with_precision 2;
 	
 	int size <- 1;
 	
 	float goToBar <- 0.5 with_precision 2;
 	float goToStage <- 0.5 with_precision 2;
+	bool goToPrison <- false;
 	
 	Stage currentStage <- nil;
 	Bar currentBar <- nil;
 	
 	int timeAtBar <- 30 update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
 	int timeAtStage <- 30 update: isAtStage() ? timeAtStage - 1 : timeAtStage min: 0;
+	int timeAtPrison <- 10 update: isAtPrison() ? timeAtPrison - 1 : timeAtPrison min: 0;
 	
 	aspect info {
 		draw sphere(size) at: location color: myColor border: #black;
@@ -70,7 +75,9 @@ species Guest skills: [moving, fipa] {
 	
 	reflex defaultBehaviour when: currentStage = nil and currentBar = nil {
 		do wander;
-		if (flip(goToStage)) {
+		if (goToPrison) {
+			do goto target: one_of(Prison);
+		} else if (flip(goToStage)) {
 			currentStage <- one_of(Stage);
 		} else if (flip(goToBar)) {
 			currentBar <- one_of(Bar);
@@ -92,6 +99,11 @@ species Guest skills: [moving, fipa] {
 		}
 	}
 	
+	action endTimeAtBar {
+		timeAtBar <- 30;
+		currentBar <- nil;
+	}
+	
 	bool isAtBar {
 		return currentBar != nil and location = currentBar.location;
 	}
@@ -107,8 +119,33 @@ species Guest skills: [moving, fipa] {
 		return currentStage != nil and location = currentStage.location;
 	}
 	
+	bool isAtPrison {
+		Prison prison <- one_of(Prison);
+		list<agent> agentsInPrison <- agents_overlapping(prison);
+		return agentsInPrison contains self;
+	}
+	
 	bool isBad {
 		return drunkness > 0.8 and loudness > 0.8;
+	}
+	
+	action drinkBeer(int quantity) {
+		happiness <- happiness + 0.1 * (quantity);
+		drunkness <- drunkness + 0.1;
+	}
+	
+	action handleBeerOrderedByFriend {
+		// if I am a friend of the other dancing guy
+		loop i over: informs {
+			string msg <- i.contents[0] as string;
+			if (msg = BEER_IN_STOCK) {
+				write name + " drinks";
+				do drinkBeer(i.contents[1] as int);
+			} else if (msg = NO_MORE_BEER) {
+				happiness <- happiness - 0.1 * (i.contents[1] as int);
+			}
+			do end_conversation message: i contents: ["Alright."] ;
+		}
 	}
 }
 
@@ -135,16 +172,13 @@ species DancingGuest parent: Guest {
 			string senderType <- string(type_of(agree.sender));
 			switch(senderType) {
 				match ChillingGuest.name {
-					// send the participant as part of the conversation
-					// maybe use cfp, has more options
-					do askBarForBeer(2);
+					do askBarForBeerForMyFriend(2, agree.sender);
 				}
 				match Photographer.name {
 					happiness <- happiness + 0.05;
 				}
 				match Bar.name {
-					happiness <- happiness + 0.1 * (agree.contents[1] as int);
-					drunkness <- drunkness + 0.1;
+					do drinkBeer(agree.contents[1] as int);
 				}
 			}
 			string msgContent <- agree.contents[0];
@@ -171,14 +205,25 @@ species DancingGuest parent: Guest {
 			switch(senderType) {
 				match DancingGuest.name {
 					do accept_proposal message: propose contents: ["OK! It's on me!"];
-					do askBarForBeer(2);
+					do askBarForBeerForMyFriend(2, propose.sender);
 				}
 			}
 			string msgContent <- propose.contents[0];
 		}
+		
+		loop request over: requests {
+			if (request.contents[0] = SECURITY_GUARD_CAUGHT_YOU) {
+//				do endTimeAtBar; 
+				// need to stop other reflexes, as we are already 'at the bar' so setting the currentBar to false, breaks all logic
+//				goToPrison <- true;
+			}
+		}
+		
+		do handleBeerOrderedByFriend;
 	}
 	
 	action startInteractions {
+		
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
 		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
@@ -198,6 +243,11 @@ species DancingGuest parent: Guest {
 					}
 				}
 			}
+		}
+		
+		if (loudness > 0.8 and drunkness > 0.8) {
+			write name + " is drunk and lound and attracts guard";
+			do start_conversation to: [one_of(SecurityGuard)] protocol: "no-protocol" performative: "inform" contents: ["Catch me if you can."];
 		}
 	}
 	
@@ -227,10 +277,10 @@ species DancingGuest parent: Guest {
 		do askBarForBeer(1);
 	}
 	
-//	action beerForMore(int quantity, agent a) {
-//		write name + " and " + a.name + " are asking for a beer at bar " + currentBar.name;
-//		do start_conversation to: [currentBar, a] protocol: 'fipa-request' performative: 'request' contents: ["We would like beer.", quantity];
-//	}
+	action askBarForBeerForMyFriend(int quantity, agent a) {
+		write name + " and " + a.name + " are asking for a beer at bar " + currentBar.name;
+		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["We would like beer.", quantity, a];
+	}
 	
 	action askBarForBeer(int quantity) {
 		write name + " is asking for a beer at bar " + currentBar.name;
@@ -244,7 +294,7 @@ species DancingGuest parent: Guest {
 
 species ChillingGuest parent: Guest {
 	
-	image_file my_icon <- image_file("../includes/data/chilling-person.jpg");
+	image_file my_icon <- image_file("../includes/data/turtle.png");
 	
 	float cautious <- rnd(0.5, 1.0) with_precision 2;
 	float nervous <- rnd(0.1, 0.3) with_precision 2;
@@ -278,6 +328,8 @@ species ChillingGuest parent: Guest {
 			}
 			string msgContent <- agree.contents[0];
 		}
+		
+		do handleBeerOrderedByFriend;
 	}
 	
 	action handleDancingGuestAtBar(message p) {
@@ -345,12 +397,7 @@ species SecurityGuard skills: [moving, fipa] {
 	Prison prison <- Prison closest_to(location);
 	
 	reflex wait when: targetPoint = nil {
-		list<Guest> guestList <- Guest at_distance(15);
-		Guest badGuest <- guestList first_with (each.isBad() = true);
-		if (badGuest != nil) {
-			write self.name + ": entering capture bad guest action: " + badGuest.name;
-			do captureBadGuest(badGuest);
-		}
+		do handleLoudAndNoisyGuest;
 	}
 	
 	// implement different behaviour when at bar and at stage
@@ -359,7 +406,7 @@ species SecurityGuard skills: [moving, fipa] {
 		do goto target: capturedGuest;
 		
 		if (capturedGuest.isBad() and self distance_to(capturedGuest) < 3) {
-			do start_conversation to: [capturedGuest] protocol: 'fipa-request' performative: 'request' contents: ["Go to prison."];
+			do start_conversation to: [capturedGuest] protocol: 'fipa-request' performative: 'request' contents: [SECURITY_GUARD_CAUGHT_YOU];
 			// escort to prison
 			write "bringing target to prison " + capturedGuest.name;
 			targetPoint <- prisonLocation;
@@ -384,6 +431,15 @@ species SecurityGuard skills: [moving, fipa] {
 		write self.name + " in prison and should go out to capture other bad guys";
 		capturedGuest <- nil;
 		targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
+	}
+	
+	action handleLoudAndNoisyGuest {
+		if (!empty(informs)) {
+			message msg <- informs[0];
+			write self.name + ": entering capture bad guest action: " + informs[0].sender;
+			do captureBadGuest(informs[0].sender);
+			do end_conversation message: msg contents: [SECURITY_GUARD_HEADING_TO_YOU];
+		}
 	}
 	
 	aspect info {
@@ -431,18 +487,27 @@ species Bar skills: [fipa] {
 	
 	reflex reply_beer_requests when: (!empty(requests)) {
 		loop r over: requests {
+			agent friendAtBar <- nil;
+			if ((length(list(r.contents))) > 2) {
+				friendAtBar <- r.contents[2] as agent;
+			}
 			int requestedBeer <- r.contents[1] as int;
-			if (beer - requestedBeer > 0) {
+			
+			if (beer - requestedBeer >= 0) {
 				write "Agree to give you a beer.";
-				do agree message: (r) contents: ["Here you are!", requestedBeer];
+				do agree message: (r) contents: [BEER_IN_STOCK, requestedBeer];
 				beer <- beer - (r.contents[1] as int);
+				if (friendAtBar != nil) {
+					do start_conversation to: [friendAtBar] protocol: 'no-protocol' performative: 'inform' contents: [BEER_IN_STOCK, requestedBeer];
+				} 
 			} else {
 				write "No more beers.";
-				do refuse message: (r) contents: ["I do not have more beer", requestedBeer] ;
+				do refuse message: (r) contents: [NO_MORE_BEER, requestedBeer] ;
+				if (friendAtBar != nil) {
+					do start_conversation to: [friendAtBar] protocol: 'no-protocol' performative: 'inform' contents: [NO_MORE_BEER, requestedBeer];
+				} 
 			}
 		}
-		
-		
 	}
 }
 
