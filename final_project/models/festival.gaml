@@ -24,7 +24,7 @@ global {
     						+ ChillingGuest count (each.drunkness > 0.8)
     						+ Photographer count (each.drunkness > 0.8);
 	
-	int numberOfGuests <- 5;
+	int numberOfGuests <- 10;
 	int barsNum <- 5;
 //	int stageNum <- 5;
 	int currentBarsNum -> {length(Bar)};
@@ -35,8 +35,8 @@ global {
 
 	init {
 		create DancingGuest number: numberOfGuests;
-//		create ChillingGuest number: numberOfGuests;
-//		create Photographer number: numberOfGuests;
+		create ChillingGuest number: numberOfGuests;
+		create Photographer number: numberOfGuests;
 		create Bar number: barsNum;
 		create SecurityGuard number: numberOfGuests / 5;
 		create Prison number: 1;
@@ -218,9 +218,7 @@ species DancingGuest parent: Guest {
 		
 		loop request over: requests {
 			if (request.contents[0] = SECURITY_GUARD_CAUGHT_YOU) {
-//				do endTimeAtBar; 
-				// need to stop other reflexes, as we are already 'at the bar' so setting the currentBar to false, breaks all logic
-//				goToPrison <- true;
+				happiness <- happiness - 0.3;
 			}
 		}
 		
