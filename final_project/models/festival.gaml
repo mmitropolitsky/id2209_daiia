@@ -72,7 +72,7 @@ species Guest skills: [moving, fipa, messaging] {
 	point randomPoint <- nil;
 	
 	int TIME_AT_BAR <- 30;
-	int TIME_AT_STAGE <- 10;
+	int TIME_AT_STAGE <- 100;
 	int TIME_AT_PRISON <- 10;
 	
 	int timeAtBar <- TIME_AT_BAR update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
@@ -138,7 +138,6 @@ species Guest skills: [moving, fipa, messaging] {
 	}
 	
 	action endTimeAtStage {
-		write name + " here at end time at stage. ";
 		timeAtStage <- TIME_AT_STAGE;
 		currentStage <- nil;
 		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
@@ -191,7 +190,8 @@ species DancingGuest parent: Guest {
 	float generous <- rnd(0.5, 1.0) with_precision 2;
 	
 	reflex isAtBarReflex when: isAtBar() {
-		do handleInteractionsAtBar;
+		do handleInteractions;
+		// TODO add endTimeAtBar call similar to #isAtStgeReflex check below;
 		if (timeAtBar mod 5 = 0) {
 			do startInteractionsAtBar;
 		}
@@ -199,9 +199,7 @@ species DancingGuest parent: Guest {
 	
 	reflex isAtStageReflex when: isAtStage() {
 		// reduce time at stage
-		
-		write name + " here at is at stage reflex. " + timeAtStage;
-		do handleInteractionsAtStage;
+		do handleInteractions;
 		if (timeAtStage = 0) {
 			do endTimeAtStage;
 		} else if (timeAtStage mod 10 = 0) {
@@ -209,7 +207,7 @@ species DancingGuest parent: Guest {
 		}
 	}
 	
-	action handleInteractionsAtBar {
+	action handleInteractions {
 		// handle responses for started conversations
 		
 		//at bar receiving positive response from either ChillGuest or Photographer or Bar
@@ -252,8 +250,18 @@ species DancingGuest parent: Guest {
 			string senderType <- string(type_of(propose.sender));
 			switch(senderType) {
 				match DancingGuest.name {
-					do accept_proposal message: propose contents: ["OK! It's on me!"];
-					do askBarForBeerForMyFriend(2, propose.sender);
+					write name + " type of sender is DG";
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar.name) {
+						write name + " locatino of sender is current bar " + currentBar.name;
+						do accept_proposal message: propose contents: ["OK! It's on me!"];
+						do askBarForBeerForMyFriend(2, propose.sender);	
+					} else if (propose.contents[0] = "STAGE" and propose.contents[1] = currentStage.name) {
+						string msg <- "Yes, let's dance!";
+						do accept_proposal message: propose contents: [msg];
+						write name + " is dancing now at stage " + currentStage.name + " with " + propose.sender + ". Sends a response: " + msg;
+						// TODO maybe add countdown?
+						do danceAtStage;
+					}
 				}
 			}
 			string msgContent <- propose.contents[0];
@@ -270,13 +278,7 @@ species DancingGuest parent: Guest {
 	}
 	
 	action handleInteractionsAtStage {
-		list<agent> agentsAtStage <- agents_overlapping(currentStage);
-		remove self from: agentsAtStage;
-		if (empty(agentsAtStage) or length(agentsAtStage) = 0) {
-			do aloneAtStage;
-		} else {
-			// FIXME
-		}
+		
 		
 	}
 	
@@ -309,23 +311,71 @@ species DancingGuest parent: Guest {
 	}
 	
 	action startInteractionsAtStage {
-		
-	}
-	
-	action meetDancingGuestAtBar(DancingGuest d) {
-		list<agent> initiators <- conversations collect (each.initiator);
-		if (!(initiators contains d)) {
-			write name + " starts drinking with " + d.name;
-			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" contents: ["Let's drink"];
+		list<agent> agentsAtStage <- agents_overlapping(currentStage);
+		remove self from: agentsAtStage;
+		if (empty(agentsAtStage) or length(agentsAtStage) = 0) {
+			do aloneAtStage;
+		} else {
+			loop agentAtStage over: agentsAtStage {
+				string agentType <- string(type_of(agentAtStage));
+				switch(agentType) {
+					match DancingGuest.name {
+						do meetDancingGuestAtStage(agentAtStage as DancingGuest);
+						write name + " is dancing now at stage " + currentStage.name + " with " + agentAtStage.name;
+						do danceAtStage;
+					}
+					match ChillingGuest.name {
+						write "DG meetings CG at Stage is NOT YET IMPLEMENTED!";
+					}
+				}
+			}
 		}
 	}
 	
+	
+	/*
+	 * MEET DANCING GUEST
+	 */
+	 // At a bar
+	action meetDancingGuestAtBar(DancingGuest d) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		if (!(initiators contains d)) {
+			string msg <- "Let's drink";
+			write name + " starts drinking with " + d.name + " and sends message " + msg;
+			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
+				contents: ["BAR", currentBar.name, msg];
+		}
+	}
+	
+	// At a stage
+	action meetDancingGuestAtStage(DancingGuest d) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		if (!(initiators contains d)) {
+			string msg <- "Let's dance together!";
+			write name + " starts dancing with " + d.name + " at stage " + currentStage.name + " and sends message " + msg;
+			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
+				contents: ["STAGE", currentStage.name, msg];
+		}
+	}
+	
+	
+	/*
+	 * MEET CHILLING GUEST
+	 */
+	 // At a bar
 	action meetChillingGuestAtBar(ChillingGuest g) {
 		if (generous > 0.8) {
 			write name + " offers a beer to " + g;
 			do start_conversation to: [g] protocol: "fipa-query" performative: "query" contents: ["Want a beer?"];
 		}
 	}
+	
+	// At a stage
+	action meetChillingGuestAtStage(ChillingGuest g) {
+		// TODO
+	}
+	
+	// MEET PHOTOGRAPHER
 	
 	action meetPhotographerAtBar(Photographer p) {
 		if (shouldAskForPicture()) {
@@ -350,13 +400,31 @@ species DancingGuest parent: Guest {
 		
 		if (debug) {
 			write name + " happiness was: " + happiness + ", new happiness is: " 
-				+ newHappiness + ". Loudness is now: " + loudness + " (was " + loudness + 0.01 + ")."; 	
+				+ newHappiness + ". Loudness is now: " + loudness + " (was " + (loudness + 0.01) + ")."; 	
 		} 
 		
 		happiness <- newHappiness;
 	}
 	
+	/*
+	 * Increase happiness when dancing!
+	 */
+	action danceAtStage {
+		float happinessIncrement <- prefersCompany ? 0.2 : 0.1;
+		happiness <- happiness + happinessIncrement;
+		
+		loudness <- loudness + 0.01;
+		
+		if (debug) {
+			write name + " happiness is increased by " 
+				+ happinessIncrement + " and is now " 
+				+ happiness + " (was" + (happiness - happinessIncrement) + "). Loudness is increased by 0.01 to " + loudness;
+		}
+		
+	}
+	
 	action askBarForBeerForMyFriend(int quantity, agent a) {
+		// FIXME there is a NPE here!!!!
 		write name + " and " + a.name + " are asking for a beer at bar " + currentBar.name;
 		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["We would like beer.", quantity, a];
 	}
@@ -365,6 +433,10 @@ species DancingGuest parent: Guest {
 		write name + " is asking for a beer at bar " + currentBar.name;
 		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["I would like beer.", quantity];
 	}
+	
+	/*
+	 * RULES
+	 */
 	
 	bool shouldAskForPicture {
 		return confident > 0.8;
