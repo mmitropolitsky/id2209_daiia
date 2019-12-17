@@ -16,8 +16,13 @@ global {
 	string SECURITY_GUARD_HEADING_TO_YOU <- "I will catch you!";
 	string SECURITY_GUARD_CAUGHT_YOU <- "Go to prison.";
 	
-	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest)};
-    int amusedGuests update: DancingGuest count (each.happiness > 0.8) + ChillingGuest count (each.happiness > 0.8);
+	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest) + length(Photographer)};
+    int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
+    						+ ChillingGuest count (each.happiness > 0.8)
+    						+ Photographer count (each.happiness > 0.8);
+    int drunkPeople update: DancingGuest count (each.drunkness > 0.8) 
+    						+ ChillingGuest count (each.drunkness > 0.8)
+    						+ Photographer count (each.drunkness > 0.8);
 	
 	int numberOfGuests <- 5;
 	int barsNum <- 5;
@@ -392,24 +397,21 @@ species SecurityGuard skills: [moving, fipa] {
 	}
 	
 	rgb guardColor <- #black;
-	point targetPoint <- nil;
 	Guest capturedGuest <- nil;
 	Prison prison <- Prison closest_to(location);
 	
-	reflex wait when: targetPoint = nil {
+	reflex wait when: capturedGuest = nil {
+		do wander;
 		do handleLoudAndNoisyGuest;
 	}
 	
-	// implement different behaviour when at bar and at stage
 	reflex capture when: capturedGuest != nil {
 		write self.name + " capturing target " + capturedGuest.name;
 		do goto target: capturedGuest;
 		
 		if (capturedGuest.isBad() and self distance_to(capturedGuest) < 3) {
 			do start_conversation to: [capturedGuest] protocol: 'fipa-request' performative: 'request' contents: [SECURITY_GUARD_CAUGHT_YOU];
-			// escort to prison
-			write "bringing target to prison " + capturedGuest.name;
-			targetPoint <- prisonLocation;
+			capturedGuest <- nil;
 		}
 	}
 
@@ -420,24 +422,11 @@ species SecurityGuard skills: [moving, fipa] {
 		}
 	}
 	
-	reflex moveToTarget when: targetPoint != nil {
-		do goto target:targetPoint;
-		if (location = targetPoint) {
-			targetPoint <- nil;
-		}
-	}
-	
-	reflex getOutOfPrison when: location = prisonLocation {
-		write self.name + " in prison and should go out to capture other bad guys";
-		capturedGuest <- nil;
-		targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
-	}
-	
 	action handleLoudAndNoisyGuest {
 		if (!empty(informs)) {
 			message msg <- informs[0];
 			write self.name + ": entering capture bad guest action: " + informs[0].sender;
-			do captureBadGuest(informs[0].sender);
+			capturedGuest <- informs[0].sender;
 			do end_conversation message: msg contents: [SECURITY_GUARD_HEADING_TO_YOU];
 		}
 	}
@@ -553,12 +542,18 @@ experiment fest_experiment type: gui {
 			species SecurityGuard aspect: info;
         }
 		
-//		display chart refresh: every(10#cycles) {
-//	        chart "Interesting value 1" type: series style: spline {
-//	        	data "allGuests" value: allGuests color: #green;
-//	        	data "amusedGuests" value: amusedGuests color: #red;
-//	        }
-//    	}	
+		display Happiness_information refresh: every(5#cycles) {
+			chart "Happiness and drunkness correlation" type: series size: {1,0.5} position: {0, 0} {
+                data "number_of_amused_guests" value: amusedGuests color: #blue;
+                data "number_of_drunk_guests" value: drunkPeople color: #red;
+            }
+            chart "DancingGuest Happiness Distribution" type: histogram background: #lightgray size: {0.5,0.5} position: {0, 0.5} {
+                data "[0;0.25]" value: DancingGuest count (each.happiness <= 0.25) color:#blue;
+                data "[0.25;0.5]" value: DancingGuest count ((each.happiness > 0.25) and (each.happiness <= 0.5)) color:#blue;
+                data "[0.5;0.75]" value: DancingGuest count ((each.happiness > 0.5) and (each.happiness <= 0.75)) color:#blue;
+                data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
+            }
+    	}	
 //    	monitor "Number of amused guests: " value: amusedGuests;
 //    	monitor "All guests: " value: numOfGuests;
 	}
