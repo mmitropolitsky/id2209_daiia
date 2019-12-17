@@ -251,11 +251,11 @@ species DancingGuest parent: Guest {
 			switch(senderType) {
 				match DancingGuest.name {
 					write name + " type of sender is DG";
-					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar.name) {
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar) {
 						write name + " locatino of sender is current bar " + currentBar.name;
 						do accept_proposal message: propose contents: ["OK! It's on me!"];
 						do askBarForBeerForMyFriend(2, propose.sender);	
-					} else if (propose.contents[0] = "STAGE" and propose.contents[1] = currentStage.name) {
+					} else if (propose.contents[0] = "STAGE" and propose.contents[1] = currentStage) {
 						string msg <- "Yes, let's dance!";
 						do accept_proposal message: propose contents: [msg];
 						write name + " is dancing now at stage " + currentStage.name + " with " + propose.sender + ". Sends a response: " + msg;
@@ -306,7 +306,10 @@ species DancingGuest parent: Guest {
 		
 		if (loudness > 0.8 and drunkness > 0.8) {
 			write name + " is drunk and lound and attracts guard";
-			do start_conversation to: [one_of(SecurityGuard)] protocol: "no-protocol" performative: "inform" contents: ["Catch me if you can."];
+			do start_conversation to: [one_of(SecurityGuard)] 
+				protocol: "no-protocol" 
+				performative: "inform" 
+				contents: ["BAR", currentBar, "Catch me if you can."];
 		}
 	}
 	
@@ -343,7 +346,7 @@ species DancingGuest parent: Guest {
 			string msg <- "Let's drink";
 			write name + " starts drinking with " + d.name + " and sends message " + msg;
 			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
-				contents: ["BAR", currentBar.name, msg];
+				contents: ["BAR", currentBar, msg];
 		}
 	}
 	
@@ -354,7 +357,7 @@ species DancingGuest parent: Guest {
 			string msg <- "Let's dance together!";
 			write name + " starts dancing with " + d.name + " at stage " + currentStage.name + " and sends message " + msg;
 			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
-				contents: ["STAGE", currentStage.name, msg];
+				contents: ["STAGE", currentStage, msg];
 		}
 	}
 	
@@ -366,7 +369,8 @@ species DancingGuest parent: Guest {
 	action meetChillingGuestAtBar(ChillingGuest g) {
 		if (generous > 0.8) {
 			write name + " offers a beer to " + g;
-			do start_conversation to: [g] protocol: "fipa-query" performative: "query" contents: ["Want a beer?"];
+			do start_conversation to: [g] protocol: "fipa-query" performative: "query" 
+				contents: ["BAR", currentBar, "Want a beer?"];
 		}
 	}
 	
@@ -380,7 +384,8 @@ species DancingGuest parent: Guest {
 	action meetPhotographerAtBar(Photographer p) {
 		if (shouldAskForPicture()) {
 			write name + " asks for a picture from " + p;
-			do start_conversation to: [p] protocol: "fipa-query" performative: "query" contents: ["Would you take a picture of me?"];
+			do start_conversation to: [p] protocol: "fipa-query" performative: "query" 
+				contents: ["BAR", currentBar, "Would you take a picture of me?"];
 		}
 	}
 	
@@ -459,16 +464,20 @@ species ChillingGuest parent: Guest {
 	float nervous <- rnd(0.1, 0.3) with_precision 2;
 	
 	reflex isAtBarReflex when: isAtBar() {
-		do handleInteractionsAtBar;
+		do handleInteractions;
 	}
 	
-	action handleInteractionsAtBar {
+	action handleInteractions {
 		if (!(empty(queries))) {
 			loop q over: queries {
 				string senderType <- string(type_of(q.sender));
 				switch senderType {
 					match DancingGuest.name {
-						do handleDancingGuestAtBar(q);
+						if (q.contents[0] = "BAR" and q.contents[1] = currentBar) {
+							do handleDancingGuestAtBar(q);
+						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage) {
+							// TODO not implemented
+						}
 					}
 					match ChillingGuest.name {
 						
@@ -494,10 +503,10 @@ species ChillingGuest parent: Guest {
 	action handleDancingGuestAtBar(message p) {
 		if (acceptOfferredBeer()) {
 			write "Accepting a beer from " + p.sender;
-			do agree message: p contents: ["I will accept it now."] ;
+			do agree message: p contents: ["BAR", currentBar, "I will accept it now."] ;
 		} else {
 			write "Declining a beer from " + p.sender;
-			do refuse message: p contents: ["I do not want a beer from a stranger"] ;
+			do refuse message: p contents: ["BAR", currentBar, "I do not want a beer from a stranger"] ;
 		}
 	}
 	
@@ -512,16 +521,20 @@ species Photographer parent: Guest {
 	rgb myColor <- #pink;
 	
 	reflex isAtBarReflex when: isAtBar() {
-		do handleInteractionsAtBar;
+		do handleInteractions;
 	}
 	
-	action handleInteractionsAtBar {
+	action handleInteractions {
 		if (!(empty(queries))) {
 			loop q over: queries {
 				string senderType <- string(type_of(q.sender));
 				switch senderType {
 					match DancingGuest.name {
-						do handleDancingGuestAtBar(q);
+						if (q.contents[0] = "BAR" and q.contents[1] = currentBar) {
+							do handleDancingGuestAtBar(q);
+						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage) {
+							// TODO not implemented
+						}
 					}
 				}
 			}
@@ -531,10 +544,10 @@ species Photographer parent: Guest {
 	action handleDancingGuestAtBar(message p) {
 		if (acceptToTakeAPicture()) {
 			write "Accepting to take a picture of " + p.sender;
-			do agree message: p contents: ["I will accept it now."] ;
+			do agree message: p contents: ["BAR", currentBar, "I will accept it now."] ;
 		} else {
 			write "Declining a picture from " + p.sender;
-			do refuse message: p contents: ["Leave me alone"] ;
+			do refuse message: p contents: ["BAR", currentBar, "Leave me alone"] ;
 		}
 	}
 	
