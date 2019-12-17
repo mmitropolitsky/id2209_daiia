@@ -111,8 +111,7 @@ species Guest skills: [moving, fipa, messaging] {
 	
 	reflex isAtBar when: isAtBar() {
 		if (timeAtBar = 0) {
-			timeAtBar <- TIME_AT_BAR;
-			currentBar <- nil;
+			do endTimeAtBar;
 		}
 	}
 	
@@ -132,8 +131,7 @@ species Guest skills: [moving, fipa, messaging] {
 	
 	reflex isAtStage when: isAtStage() {
 		if (timeAtStage = 0) {
-			timeAtStage <- TIME_AT_STAGE;
-			currentStage <- nil;
+			do endTimeAtStage;
 		}
 	}
 	
@@ -191,18 +189,14 @@ species DancingGuest parent: Guest {
 	
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractions;
-		// TODO add endTimeAtBar call similar to #isAtStgeReflex check below;
 		if (timeAtBar mod 5 = 0) {
 			do startInteractionsAtBar;
 		}
 	}
 	
 	reflex isAtStageReflex when: isAtStage() {
-		// reduce time at stage
 		do handleInteractions;
-		if (timeAtStage = 0) {
-			do endTimeAtStage;
-		} else if (timeAtStage mod 10 = 0) {
+		if (timeAtStage mod 10 = 0) {
 			do startInteractionsAtStage;
 		}
 	}
@@ -215,10 +209,14 @@ species DancingGuest parent: Guest {
 			string senderType <- string(type_of(agree.sender));
 			switch(senderType) {
 				match ChillingGuest.name {
-					do askBarForBeerForMyFriend(2, agree.sender);
+					if (agree.contents[0] = "BAR" and agree.contents[1] = currentBar) {
+						do askBarForBeerForMyFriend(2, agree.sender);
+					}
 				}
 				match Photographer.name {
-					happiness <- happiness + 0.05;
+					if (agree.contents[0] = "BAR" and agree.contents[1] = currentBar) {
+						happiness <- happiness + 0.05;
+					}
 				}
 				match Bar.name {
 					do drinkBeer(agree.contents[1] as int);
@@ -429,7 +427,6 @@ species DancingGuest parent: Guest {
 	}
 	
 	action askBarForBeerForMyFriend(int quantity, agent a) {
-		// FIXME there is a NPE here!!!!
 		write name + " and " + a.name + " are asking for a beer at bar " + currentBar.name;
 		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["We would like beer.", quantity, a];
 	}
