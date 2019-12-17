@@ -37,8 +37,9 @@ global {
 		create DancingGuest number: numberOfGuests;
 		create ChillingGuest number: numberOfGuests;
 		create Photographer number: numberOfGuests;
+		create SecurityGuard number: numberOfGuests;
+		create Merchant number: numberOfGuests;
 		create Bar number: barsNum;
-		create SecurityGuard number: numberOfGuests / 5;
 		create Prison number: 1;
 //		create Stage number: stageNum;
 	}
@@ -47,7 +48,7 @@ global {
 /**
  * Gues Species
  */
-species Guest skills: [moving, fipa] {
+species Guest skills: [moving, fipa, messaging] {
 	
 	image_file my_icon;
 	
@@ -139,6 +140,7 @@ species Guest skills: [moving, fipa] {
 		drunkness <- drunkness + 0.1;
 	}
 	
+	// after a friend orders a beer for me, the bar sends an inform message whether there is more beer left or not
 	action handleBeerOrderedByFriend {
 		// if I am a friend of the other dancing guy
 		loop i over: informs {
@@ -173,6 +175,7 @@ species DancingGuest parent: Guest {
 	action handleInteractionsAtBar {
 		// handle responses for started conversations
 		
+		//at bar receiving positive response from either ChillGuest or Photographer or Bar
 		loop agree over: agrees {
 			string senderType <- string(type_of(agree.sender));
 			switch(senderType) {
@@ -189,6 +192,7 @@ species DancingGuest parent: Guest {
 			string msgContent <- agree.contents[0];
 		}
 		
+		//at bar receiving negative response from either ChillGuest or Photographer or Bar
 		loop refuse over: refuses {
 			string senderType <- string(type_of(refuse.sender));
 			switch(senderType) {
@@ -205,6 +209,8 @@ species DancingGuest parent: Guest {
 			string msgContent <- refuse.contents[0];
 		}
 		
+		//at bar meeting another dancing guest that invites us to drink with them;
+		//current dancing guest is asking bar for beers for both current and the friend that invited us to drink
 		loop propose over: proposes {
 			string senderType <- string(type_of(propose.sender));
 			switch(senderType) {
@@ -216,6 +222,7 @@ species DancingGuest parent: Guest {
 			string msgContent <- propose.contents[0];
 		}
 		
+		// at bar, security guard reaches us and our happiness goes down
 		loop request over: requests {
 			if (request.contents[0] = SECURITY_GUARD_CAUGHT_YOU) {
 				happiness <- happiness - 0.3;
@@ -292,6 +299,14 @@ species DancingGuest parent: Guest {
 	
 	bool shouldAskForPicture {
 		return confident > 0.8;
+	}
+	
+	bool shouldApproachMerchantAtBar {
+		return confident > 0.5;
+	}
+	
+	bool shouldBuyFromMerchantAtBar(Merchant m) {
+		return true;
 	}
 }
 
@@ -384,6 +399,26 @@ species Photographer parent: Guest {
 	
 	bool acceptToTakeAPicture {
 		return flip(0.1);
+	}
+}
+
+species Merchant parent: Guest {
+	
+	image_file my_icon <- image_file("../includes/data/merchant.jpg");
+	rgb myColor <- #aquamarine;
+	
+	float trustworthy <- rnd(0.0, 1.0) with_precision 2;
+	float convincing <- rnd(0.0, 1.0) with_precision 2;
+	float promoting <- rnd(0.0, 1.0) with_precision 2;
+	
+	reflex isAtBarReflex when: isAtBar() {
+		do handleInteractionsAtBar;
+	}
+	
+	action handleInteractionsAtBar {
+	}
+	
+	action handleDancingGuestAtBar(message p) {
 	}
 }
 
@@ -527,6 +562,7 @@ experiment fest_experiment type: gui {
 			species Photographer aspect: icon;
 			species Prison aspect: icon;
 			species SecurityGuard aspect: icon;
+			species Merchant aspect: icon;
         }
 
         display info_display {
@@ -538,6 +574,7 @@ experiment fest_experiment type: gui {
 			species Photographer aspect: info;
 			species Prison aspect: info;
 			species SecurityGuard aspect: info;
+			species Merchant aspect: info;
         }
 		
 		display Happiness_information refresh: every(5#cycles) {
