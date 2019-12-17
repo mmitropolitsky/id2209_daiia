@@ -26,8 +26,11 @@ global {
 	
 	int numberOfGuests <- 10;
 	int barsNum <- 5;
-//	int stageNum <- 5;
+	int stageNum <- 5;
 	int currentBarsNum -> {length(Bar)};
+	
+	// print debug logs or not
+	bool debug <- true;
 	
 	point prisonLocation <- {90.0, 90.0};
 	
@@ -41,7 +44,7 @@ global {
 		create Merchant number: numberOfGuests;
 		create Bar number: barsNum;
 		create Prison number: 1;
-//		create Stage number: stageNum;
+		create Stage number: stageNum;
 	}
 }
 
@@ -56,19 +59,25 @@ species Guest skills: [moving, fipa, messaging] {
 	float happiness <- 0.0 with_precision 2;
 	float drunkness <- 0.0 with_precision 2;
 	float loudness <- rnd(0.5, 1.0) with_precision 2;
+	bool prefersCompany <- flip(0.5);
 	
 	int size <- 1;
 	
-	float goToBar <- 0.5 with_precision 2;
-	float goToStage <- 0.5 with_precision 2;
+	float goToBar <- 0.2 with_precision 2;
+	float goToStage <- 0.2 with_precision 2;
 	bool goToPrison <- false;
 	
 	Stage currentStage <- nil;
 	Bar currentBar <- nil;
+	point randomPoint <- nil;
 	
-	int timeAtBar <- 30 update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
-	int timeAtStage <- 30 update: isAtStage() ? timeAtStage - 1 : timeAtStage min: 0;
-	int timeAtPrison <- 10 update: isAtPrison() ? timeAtPrison - 1 : timeAtPrison min: 0;
+	int TIME_AT_BAR <- 30;
+	int TIME_AT_STAGE <- 10;
+	int TIME_AT_PRISON <- 10;
+	
+	int timeAtBar <- TIME_AT_BAR update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
+	int timeAtStage <- TIME_AT_STAGE update: isAtStage() ? timeAtStage - 1 : timeAtStage min: 0;
+	int timeAtPrison <- TIME_AT_PRISON update: isAtPrison() ? timeAtPrison - 1 : timeAtPrison min: 0;
 	
 	aspect info {
 		draw sphere(size) at: location color: myColor border: #black;
@@ -81,7 +90,12 @@ species Guest skills: [moving, fipa, messaging] {
 	
 	reflex defaultBehaviour when: currentStage = nil and currentBar = nil {
 		do wander;
-		if (goToPrison) {
+		if (randomPoint != nil) {
+			do goto target: randomPoint;
+			if (self.location = randomPoint) {
+				randomPoint <- nil;
+			}
+		} else if (goToPrison) {
 			do goto target: one_of(Prison);
 		} else if (flip(goToStage)) {
 			currentStage <- one_of(Stage);
@@ -90,23 +104,20 @@ species Guest skills: [moving, fipa, messaging] {
 		}
 	}
 	
-	reflex goToStage when: currentStage != nil {
-		do goto target: currentStage;
-	}
-	
+	// Bar related
 	reflex goToBar when: currentBar != nil {
 		do goto target: currentBar;
 	}
 	
 	reflex isAtBar when: isAtBar() {
 		if (timeAtBar = 0) {
-			timeAtBar <- 30;
+			timeAtBar <- TIME_AT_BAR;
 			currentBar <- nil;
 		}
 	}
 	
 	action endTimeAtBar {
-		timeAtBar <- 30;
+		timeAtBar <- TIME_AT_BAR;
 		currentBar <- nil;
 	}
 	
@@ -114,17 +125,31 @@ species Guest skills: [moving, fipa, messaging] {
 		return currentBar != nil and location = currentBar.location;
 	}
 	
-	reflex isAtStageReflex when: isAtStage() {
+	// Stage related
+	reflex goToStage when: currentStage != nil {
+		do goto target: currentStage;
+	}
+	
+	reflex isAtStage when: isAtStage() {
 		if (timeAtStage = 0) {
-			timeAtStage <- 30;
+			timeAtStage <- TIME_AT_STAGE;
 			currentStage <- nil;
 		}
+	}
+	
+	action endTimeAtStage {
+		write name + " here at end time at stage. ";
+		timeAtStage <- TIME_AT_STAGE;
+		currentStage <- nil;
+		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
 	}
 	
 	bool isAtStage {
 		return currentStage != nil and location = currentStage.location;
 	}
 	
+	
+	// Prison related
 	bool isAtPrison {
 		Prison prison <- one_of(Prison);
 		list<agent> agentsInPrison <- agents_overlapping(prison);
@@ -168,7 +193,19 @@ species DancingGuest parent: Guest {
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractionsAtBar;
 		if (timeAtBar mod 5 = 0) {
-			do startInteractions;
+			do startInteractionsAtBar;
+		}
+	}
+	
+	reflex isAtStageReflex when: isAtStage() {
+		// reduce time at stage
+		
+		write name + " here at is at stage reflex. " + timeAtStage;
+		do handleInteractionsAtStage;
+		if (timeAtStage = 0) {
+			do endTimeAtStage;
+		} else if (timeAtStage mod 10 = 0) {
+			do startInteractionsAtStage;
 		}
 	}
 	
@@ -232,8 +269,18 @@ species DancingGuest parent: Guest {
 		do handleBeerOrderedByFriend;
 	}
 	
-	action startInteractions {
+	action handleInteractionsAtStage {
+		list<agent> agentsAtStage <- agents_overlapping(currentStage);
+		remove self from: agentsAtStage;
+		if (empty(agentsAtStage) or length(agentsAtStage) = 0) {
+			do aloneAtStage;
+		} else {
+			// FIXME
+		}
 		
+	}
+	
+	action startInteractionsAtBar {
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
 		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
@@ -261,6 +308,10 @@ species DancingGuest parent: Guest {
 		}
 	}
 	
+	action startInteractionsAtStage {
+		
+	}
+	
 	action meetDancingGuestAtBar(DancingGuest d) {
 		list<agent> initiators <- conversations collect (each.initiator);
 		if (!(initiators contains d)) {
@@ -285,6 +336,24 @@ species DancingGuest parent: Guest {
 	
 	action aloneAtBar {
 		do askBarForBeer(1);
+	}
+	
+	action aloneAtStage {
+		// write what the agent is doing
+		write name + " is dancing alone at stage" + currentStage.name;
+		
+		// decrease loudness
+		loudness <- loudness - 0.01;
+		
+		// increase/decrease happiness based on prefers to be alone or not
+		float newHappiness <- prefersCompany ? happiness + 0.01 : happiness - 0.01;
+		
+		if (debug) {
+			write name + " happiness was: " + happiness + ", new happiness is: " 
+				+ newHappiness + ". Loudness is now: " + loudness + " (was " + loudness + 0.01 + ")."; 	
+		} 
+		
+		happiness <- newHappiness;
 	}
 	
 	action askBarForBeerForMyFriend(int quantity, agent a) {
@@ -589,8 +658,8 @@ experiment fest_experiment type: gui {
                 data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
             }
     	}	
-//    	monitor "Number of amused guests: " value: amusedGuests;
-//    	monitor "All guests: " value: numOfGuests;
+    	monitor "Number of amused guests: " value: amusedGuests;
+    	monitor "All guests: " value: numOfGuests;
 	}
 	
 	
