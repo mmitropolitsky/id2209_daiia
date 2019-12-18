@@ -492,7 +492,6 @@ species ChillingGuest parent: Guest {
 //						do meetPhotographerAtBar(agentAtBar as Photographer);
 					}
 				}
-				string msg <- q.contents[0];
 			}
 		}	
 	}
@@ -542,7 +541,7 @@ species ChillingGuest parent: Guest {
 		if (shouldOrderABeerWhenAlone()) {
 			do askBarForBeer(1);
 		} else {
-			write name + " is just chilling at bar " + currentBar.name;
+			write "[Time: " + time + "] " + name + " is just chilling at bar " + currentBar.name;
 		}
 	}
 	
@@ -823,7 +822,7 @@ experiment fest_experiment type: gui {
                 data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
             }
 		}
-    	monitor "Number of amused guests: " value: amusedGuests;
+		monitor "Number of amused guests: " value: amusedGuests;
     	monitor "All guests: " value: numOfGuests;
 	}
 	
