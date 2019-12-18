@@ -51,7 +51,7 @@ global {
 /**
  * Gues Species
  */
-species Guest skills: [moving, fipa, messaging] {
+species Guest skills: [moving, fipa] {
 	
 	image_file my_icon;
 	
@@ -203,7 +203,6 @@ species DancingGuest parent: Guest {
 	
 	action handleInteractions {
 		// handle responses for started conversations
-		
 		//at bar receiving positive response from either ChillGuest or Photographer or Bar
 		loop agree over: agrees {
 			string senderType <- string(type_of(agree.sender));
