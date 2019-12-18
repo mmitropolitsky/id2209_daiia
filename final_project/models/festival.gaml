@@ -125,6 +125,7 @@ species Guest skills: [moving, fipa] {
 	action endTimeAtBar {
 		timeAtBar <- TIME_AT_BAR;
 		currentBar <- nil;
+		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
 	}
 	
 	bool isAtBar {
@@ -515,28 +516,58 @@ species ChillingGuest parent: Guest {
 	
 	float cautious <- rnd(0.5, 1.0) with_precision 2;
 	float nervous <- rnd(0.1, 0.3) with_precision 2;
+	float positive <- rnd(0.1, 0.7) with_precision 2;
 	
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractions;
 	}
 	
-	action handleInteractions {
-		if (!(empty(queries))) {
-			loop q over: queries {
-				string senderType <- string(type_of(q.sender));
-				switch senderType {
+	reflex isAtBarToStartInteractionsReflex when: isAtBar() and timeAtBar mod 5 = 0 {
+		do startInteractionsAtBar;
+	}
+	
+	action startInteractionsAtBar {
+		write name + "start interactions at bar" + time;
+		list<agent> agentsAtBar <- agents_overlapping(currentBar);
+		remove self from: agentsAtBar;
+		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
+			do aloneAtBar;
+		} else {
+			loop agentAtBar over: agentsAtBar {
+				string agentType <- string(type_of(agentAtBar));
+				switch(agentType) {
 					match DancingGuest.name {
-						if (q.contents[0] = "BAR" and q.contents[1] = currentBar) {
-							do handleDancingGuestAtBar(q);
-						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage) {
-							// TODO not implemented
-						}
+						// TODO
+//						do meetDancingGuestAtBar(agentAtBar as DancingGuest);
 					}
 					match ChillingGuest.name {
-						
+						// TODO
+//						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
+					}
+					match Photographer.name {
+						// TODO
+//						do meetPhotographerAtBar(agentAtBar as Photographer);
 					}
 				}
-				string msg <- q.contents[0];
+			}
+		}	
+	}
+	
+	
+	action handleInteractions {
+		loop q over: queries {
+			string senderType <- string(type_of(q.sender));
+			switch senderType {
+				match DancingGuest.name {
+					if (q.contents[0] = "BAR" and q.contents[1] = currentBar) {
+						do handleDancingGuestAtBar(q);
+					} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage) {
+						// TODO not implemented
+					}
+				}
+				match ChillingGuest.name {
+					
+				}
 			}
 		}
 		
@@ -545,7 +576,13 @@ species ChillingGuest parent: Guest {
 			string senderType <- string(type_of(agree.sender));
 			switch(senderType) {
 				match Bar.name {
-					happiness <- happiness + 0.1;
+					// if we are too drunk, happiness goes down...
+					drunkness <- drunkness + 0.1;
+					if (drunkness < 0.8) {
+						happiness <- happiness + 0.1;	
+					} else {
+						happiness <- happiness - 0.1;
+					}
 				}
 			}
 			string msgContent <- agree.contents[0];
@@ -554,19 +591,64 @@ species ChillingGuest parent: Guest {
 		do handleBeerOrderedByFriend;
 	}
 	
-	action handleDancingGuestAtBar(message p) {
-		if (acceptOfferredBeer()) {
-			write "Time[" + time + "]: Accepting a beer from " + p.sender;
-			do agree message: p contents: ["BAR", currentBar, "I will accept it now.", cycle] ;
+	/*
+	 * ACTIONS
+	 */
+	action aloneAtBar {
+		if (shouldOrderABeerWhenAlone()) {
+			do askBarForBeer(1);
 		} else {
-			write "Declining a beer from " + p.sender;
-			do refuse message: p contents: ["BAR", currentBar, "I do not want a beer from a stranger"] ;
+			write "[Time: " + time + "] " + name + " is just chilling at bar " + currentBar.name;
 		}
 	}
 	
-	bool acceptOfferredBeer {
-		return flip(0.9);
+	action handleDancingGuestAtBar(message p) {
+		message m <- p;
+		if (shouldGoAwayFromBar(m.sender as DancingGuest)) {
+			do refuse message: m contents: ["BAR", currentBar, "I do not want a beer from a you!"] ;
+			do endTimeAtBar;
+			write "[Time: " + time + "] " + name + " leaves bar because of the annoying Dancing guest " + m.sender;
+			happiness <- happiness - 0.1;
+		} else {
+			do handleBeerProposalFromDancingGuestAtBar(m);	
+		}
 	}
+	
+	action handleBeerProposalFromDancingGuestAtBar(message p) {
+		if (acceptOfferredBeer()) {
+			write "Time[" + time + "]: Accepting a beer from " + p.sender;
+			do agree message: p contents: ["BAR", currentBar, "I will accept it now.", cycle] ;
+			happiness <- happiness + 0.1;
+		} else {
+			write "Declining a beer from " + p.sender;
+			do refuse message: p contents: ["BAR", currentBar, "I do not want a beer from a stranger"] ;
+			happiness <- happiness - 0.1;
+		}
+	}
+
+	action askBarForBeer(int quantity) {
+		write name + " is asking for a beer at bar " + currentBar.name;
+		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["I would like beer.", quantity];
+	}
+
+
+	/*
+	 * RULES
+	 */
+	bool shouldGoAwayFromBar(DancingGuest dg) {
+		write name + "in should go away from bar";
+		return dg.loudness > 0.8 and positive < 0.7;
+	} 
+	 	
+	bool acceptOfferredBeer {
+		return cautious < 0.7 and nervous < 0.8;
+	}
+	
+	bool shouldOrderABeerWhenAlone {
+		bool shouldOrder <- (nervous > 0.5 or positive > 0.5) and currentBar != nil;
+		return shouldOrder;
+	}
+	
 }
 
 species Photographer parent: Guest {
@@ -839,7 +921,7 @@ experiment fest_experiment type: gui {
                 data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
             }
 		}
-    	monitor "Number of amused guests: " value: amusedGuests;
+		monitor "Number of amused guests: " value: amusedGuests;
     	monitor "All guests: " value: numOfGuests;
 	}
 	
