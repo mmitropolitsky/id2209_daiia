@@ -16,6 +16,13 @@ global {
 	string SECURITY_GUARD_HEADING_TO_YOU <- "I will catch you!";
 	string SECURITY_GUARD_CAUGHT_YOU <- "Go to prison.";
 	
+	string ASK_MERCHANT_FOR_OFFER <- "I would like to buy something.";
+	string MERCHANT_MAKES_AN_OFFER <- "You can buy merchandise now.";
+	string MERCHANT_IS_NOT_WORKING <- "Sorry, I am not working.";
+	string BUY_MERCHANDISE <- "I will buy this.";
+	string MERCHANT_NOT_TRUSTWORTHY <- "You are not trustworthy.";
+	float MERCHANT_WORKING_AT_BAR <- 0.2;
+
 	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest) + length(Photographer)};
     int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
     						+ ChillingGuest count (each.happiness > 0.8)
@@ -187,8 +194,13 @@ species DancingGuest parent: Guest {
 	float confident <- rnd(0.5, 1.0) with_precision 2;
 	float generous <- rnd(0.5, 1.0) with_precision 2;
 	
+	bool hasApproachedMerchant <- false;
+
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractions;
+		if (timeAtBar mod 30 = 0) {
+			hasApproachedMerchant <- false;
+		}
 		if (timeAtBar mod 5 = 0) {
 			do startInteractionsAtBar;
 		}
@@ -237,6 +249,13 @@ species DancingGuest parent: Guest {
 				match Bar.name {
 					happiness <- happiness - 0.1 * (refuse.contents[1] as int);
 				}
+				//after approaching the Merchant for an offer, if he is not working, we receive a refuse 
+				match Merchant.name {
+					if (refuse.contents[0] = "BAR" and refuse.contents[1] = currentBar) {
+						write "Time[" + time + "]: " + name + " receives a refuse from merchant " + refuse.sender;
+						happiness <- happiness - 0.05;
+					}
+				}
 			}
 			string msgContent <- refuse.contents[0];
 		}
@@ -260,6 +279,20 @@ species DancingGuest parent: Guest {
 						do danceAtStage;
 					}
 				}
+				//after approaching the Merchant for an offer, if he is working, he makes a proposal to the dancing guest 
+				match Merchant.name {
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar) {
+						write "Time[" + time + "]: " + name + " receives a proposal from merchant " + propose.sender;
+						if (shouldBuyFromMerchantAtBar(Merchant(propose.sender))) {
+							write "Time[" + time + "]: " + name + " is buying from " + propose.sender;
+							do accept_proposal message: propose contents: ["BAR", currentBar, BUY_MERCHANDISE];
+							happiness <- happiness + 0.1;
+						} else {
+							write "Time[" + time + "]: " + name + " is not buying from " + propose.sender;
+							do reject_proposal message: propose contents: ["BAR", currentBar, MERCHANT_NOT_TRUSTWORTHY];
+						}
+					}
+				}
 			}
 			string msgContent <- propose.contents[0];
 		}
@@ -273,12 +306,12 @@ species DancingGuest parent: Guest {
 		
 		do handleBeerOrderedByFriend;
 	}
-	
+
 	action handleInteractionsAtStage {
 		
 		
 	}
-	
+
 	action startInteractionsAtBar {
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
@@ -297,19 +330,25 @@ species DancingGuest parent: Guest {
 					match Photographer.name {
 						do meetPhotographerAtBar(agentAtBar as Photographer);
 					}
+					match Merchant.name {
+						do meetMerchantAtBar(agentAtBar as Merchant);
+					}
 				}
 			}
 		}
-		
+
 		if (loudness > 0.8 and drunkness > 0.8) {
 			write name + " is drunk and lound and attracts guard";
-			do start_conversation to: [one_of(SecurityGuard)] 
+			SecurityGuard securityGuard <- one_of(SecurityGuard);
+			if (securityGuard != nil) {
+				do start_conversation to: [securityGuard] 
 				protocol: "no-protocol" 
 				performative: "inform" 
 				contents: ["BAR", currentBar, "Catch me if you can."];
+			}
 		}
 	}
-	
+
 	action startInteractionsAtStage {
 		list<agent> agentsAtStage <- agents_overlapping(currentStage);
 		remove self from: agentsAtStage;
@@ -386,6 +425,24 @@ species DancingGuest parent: Guest {
 		}
 	}
 	
+	action meetPhotographerAtStage(Photographer p) {
+		// TODO
+	}
+
+	// MEET MERCHANT
+
+	action meetMerchantAtBar(Merchant m) {
+		if (shouldApproachMerchantAtBar()) {
+			write "Time[" + time + "]: " + name + " approaches merchant " + m;
+			do start_conversation to: list(m) protocol: 'fipa-contract-net' performative: 'cfp' contents: ["BAR", currentBar, ASK_MERCHANT_FOR_OFFER];
+           	hasApproachedMerchant <- true;
+   		}
+   }
+   
+   action meetMerchantAtStage(Merchant m) {
+		// TODO
+   }
+	
 	action aloneAtBar {
 		do askBarForBeer(1);
 	}
@@ -444,11 +501,11 @@ species DancingGuest parent: Guest {
 	}
 	
 	bool shouldApproachMerchantAtBar {
-		return confident > 0.5;
+		return confident > 0.5 and !hasApproachedMerchant;
 	}
 	
 	bool shouldBuyFromMerchantAtBar(Merchant m) {
-		return true;
+		return m.trustworthy > 0.3;
 	}
 }
 
@@ -567,9 +624,51 @@ species Merchant parent: Guest {
 	}
 	
 	action handleInteractionsAtBar {
+		loop cfp over: cfps {
+			string senderType <- string(type_of(cfp.sender));
+	        switch(senderType) {
+				match DancingGuest.name {
+	            	do handleDancingGuestAtBar(cfp);
+	            }
+	       	}
+	    }
+		
+		loop reject over: reject_proposals {
+			string senderType <- string(type_of(reject.sender));
+			switch(senderType) {
+				match DancingGuest.name {
+					if (reject.contents[0] = "BAR" and reject.contents[1] = currentBar and reject.contents[2] = MERCHANT_NOT_TRUSTWORTHY) {
+							write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
+							happiness <- happiness - 0.1;
+					}
+				}
+			}
+		}
+	
+		loop accept over: accept_proposals {
+			string senderType <- string(type_of(accept.sender));
+				switch(senderType) {
+					match DancingGuest.name {
+						if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = BUY_MERCHANDISE) {
+							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+							happiness <- happiness + 0.1;	
+						}
+				}
+			}
+		}
 	}
 	
-	action handleDancingGuestAtBar(message p) {
+	action handleDancingGuestAtBar(message cfp) {
+		if (cfp.contents[0] = "BAR" and cfp.contents[1] = currentBar and cfp.contents[2] = ASK_MERCHANT_FOR_OFFER) {
+        	bool isWorking <- flip(MERCHANT_WORKING_AT_BAR);
+            if (isWorking) {
+            	write "Time[" + time + "]: " + name + " makes a proposal " + cfp.sender;
+                do propose message: cfp contents: ["BAR", currentBar, MERCHANT_MAKES_AN_OFFER];
+            } else {
+            	write "Time[" + time + "]: " + name + " refuses offer from " + cfp.sender;
+                do refuse message: cfp contents: ["BAR", currentBar, MERCHANT_IS_NOT_WORKING];
+            }
+        }
 	}
 }
 
