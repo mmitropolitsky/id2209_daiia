@@ -365,7 +365,7 @@ species DancingGuest parent: Guest {
 	 // At a bar
 	action meetChillingGuestAtBar(ChillingGuest g) {
 		if (generous > 0.8) {
-			write name + " offers a beer to " + g;
+			write "Time [" + time + "]: " + name + " offers a beer to " + g + " at location " + currentBar;
 			do start_conversation to: [g] protocol: "fipa-query" performative: "query" 
 				contents: ["BAR", currentBar, "Want a beer?"];
 		}
@@ -479,6 +479,7 @@ species ChillingGuest parent: Guest {
 						
 					}
 				}
+				string msg <- q.contents[0];
 			}
 		}
 		
@@ -498,8 +499,8 @@ species ChillingGuest parent: Guest {
 	
 	action handleDancingGuestAtBar(message p) {
 		if (acceptOfferredBeer()) {
-			write "Accepting a beer from " + p.sender;
-			do agree message: p contents: ["BAR", currentBar, "I will accept it now."] ;
+			write "Time[" + time + "]: Accepting a beer from " + p.sender;
+			do agree message: p contents: ["BAR", currentBar, "I will accept it now.", cycle] ;
 		} else {
 			write "Declining a beer from " + p.sender;
 			do refuse message: p contents: ["BAR", currentBar, "I do not want a beer from a stranger"] ;
@@ -738,7 +739,7 @@ experiment fest_experiment type: gui {
                 data "[0.5;0.75]" value: DancingGuest count ((each.happiness > 0.5) and (each.happiness <= 0.75)) color:#blue;
                 data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
             }
-    	}	
+		}
     	monitor "Number of amused guests: " value: amusedGuests;
     	monitor "All guests: " value: numOfGuests;
 	}
