@@ -37,7 +37,7 @@ global {
     						+ ChillingGuest count (each.drunkness > 0.8)
     						+ Photographer count (each.drunkness > 0.8);
 	
-	int numberOfGuests <- 1;
+	int numberOfGuests <- 10;
 	int barsNum <- 5;
 	int stageNum <- 5;
 	int currentBarsNum -> {length(Bar)};
@@ -50,14 +50,14 @@ global {
 	list<string> musicTypes <- ["rock", "pop", "jazz"];
 
 	init {
-//		create DancingGuest number: numberOfGuests;
-//		create ChillingGuest number: numberOfGuests;
+		create DancingGuest number: numberOfGuests;
+		create ChillingGuest number: numberOfGuests;
 		create Photographer number: numberOfGuests;
-//		create SecurityGuard number: numberOfGuests;
-//		create Merchant number: numberOfGuests;
+		create SecurityGuard number: numberOfGuests;
+		create Merchant number: numberOfGuests;
 		create Bar number: barsNum;
-//		create Prison number: 1;
-//		create Stage number: stageNum;
+		create Prison number: 1;
+		create Stage number: stageNum;
 	}
 }
 
