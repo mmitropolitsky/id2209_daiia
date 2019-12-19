@@ -85,7 +85,7 @@ species Guest skills: [moving, fipa] {
 	point randomPoint <- nil;
 	
 	int TIME_AT_BAR <- 30;
-	int TIME_AT_STAGE <- 100;
+	int TIME_AT_STAGE <- 300;
 	int TIME_AT_PRISON <- 10;
 	
 	int timeAtBar <- TIME_AT_BAR update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
@@ -201,6 +201,9 @@ species DancingGuest parent: Guest {
 	float confident <- rnd(0.5, 1.0) with_precision 2;
 	float generous <- rnd(0.5, 1.0) with_precision 2;
 	
+	// USE THIS ONE WHEN INTERACTING WITH SECURITY GUARDS
+	bool isFollowingGuest <- false;
+	
 	bool hasApproachedMerchant <- false;
 
 	reflex isAtBarReflex when: isAtBar() {
@@ -230,6 +233,8 @@ species DancingGuest parent: Guest {
 				match ChillingGuest.name {
 					if (agree.contents[0] = "BAR" and agree.contents[1] = currentBar) {
 						do askBarForBeerForMyFriend(2, agree.sender);
+					} else if (agree.contents[0] = "STAGE" and agree.contents[1] = currentStage) {
+						happiness <- happiness + 0.05;
 					}
 				}
 				match Photographer.name {
@@ -244,12 +249,33 @@ species DancingGuest parent: Guest {
 			string msgContent <- agree.contents[0];
 		}
 		
+		loop reject over: reject_proposals {
+			string senderType <- string(type_of(reject.sender));
+			switch(senderType) {
+				match ChillingGuest.name {
+					if (reject.contents[0] = "STAGE" and reject.contents[1] = currentStage) {
+						happiness <- happiness - 0.1;
+						write "Time[" + time + "]: " + name + " is not dancing anymore with " + reject.sender + " :("; 
+						if (shouldFollowChillingGuest()) {
+							write "Time[" + time + "]: " + name + " is now following " + reject.sender + "... Creepy";
+							isFollowingGuest <- true;
+							do start_conversation to: [reject.sender] protocol: 'no-protocol' performative: 'inform' 
+								contents: ["STAGE", currentStage, "You shouldn't have refused me!", cycle];
+							
+						}
+					}
+				}
+			}
+		}
+		
 		//at bar receiving negative response from either ChillGuest or Photographer or Bar
 		loop refuse over: refuses {
 			string senderType <- string(type_of(refuse.sender));
 			switch(senderType) {
 				match ChillingGuest.name {
-					happiness <- happiness - 0.1;
+					if (refuse.contents[0] = "BAR" and refuse.contents[1] = currentBar) {
+						happiness <- happiness - 0.1;	
+					}
 				}
 				match Photographer.name {
 					happiness <- happiness - 0.05;
@@ -332,11 +358,6 @@ species DancingGuest parent: Guest {
 		do handleBeerOrderedByFriend;
 	}
 
-	action handleInteractionsAtStage {
-		
-		
-	}
-
 	action startInteractionsAtBar {
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
@@ -385,11 +406,12 @@ species DancingGuest parent: Guest {
 				switch(agentType) {
 					match DancingGuest.name {
 						do meetDancingGuestAtStage(agentAtStage as DancingGuest);
-						write name + " is dancing now at stage " + currentStage.name + " with " + agentAtStage.name;
+						write "[Time: " + time + "] " + name + " is dancing now at stage " + currentStage.name + " with " + agentAtStage.name;
 						do danceAtStage;
 					}
 					match ChillingGuest.name {
-						write "DG meetings CG at Stage is NOT YET IMPLEMENTED!";
+						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
+						write "[Time: " + time + "] " + name + " is dancing now at stage " + currentStage.name + " with " + agentAtStage.name;
 					}
 				}
 			}
@@ -437,7 +459,13 @@ species DancingGuest parent: Guest {
 	
 	// At a stage
 	action meetChillingGuestAtStage(ChillingGuest g) {
-		// TODO
+		list<agent> initiators <- conversations collect (each.initiator);
+		if (!(initiators contains g)) {
+			string msg <- "Let's dance together!";
+			write name + " starts dancing with " + g.name + " at stage " + currentStage.name + " and sends message " + msg;
+			do start_conversation to: [g] protocol: "fipa-propose" performative: "propose" 
+				contents: ["STAGE", currentStage, msg, cycle];
+		}
 	}
 	
 	// MEET PHOTOGRAPHER
@@ -521,6 +549,12 @@ species DancingGuest parent: Guest {
 	/*
 	 * RULES
 	 */
+	 
+	bool shouldFollowChillingGuest {
+		write "HERE! at should follow";
+		// Here loudness is equivalent to annoying
+		return confident > 0.9 and loudness > 0.8;
+	}
 	
 	bool shouldAskForPicture {
 		return confident > 0.8;
@@ -547,12 +581,16 @@ species ChillingGuest parent: Guest {
 	float nervous <- rnd(0.1, 0.3) with_precision 2;
 	float positive <- rnd(0.1, 0.7) with_precision 2;
 	
-	reflex isAtBarReflex when: isAtBar() {
+	reflex isAtBarReflex when: isAtBar() or isAtStage() {
 		do handleInteractions;
 	}
 	
 	reflex isAtBarToStartInteractionsReflex when: isAtBar() and timeAtBar mod 5 = 0 {
 		do startInteractionsAtBar;
+	}
+	
+	reflex isAtStageToStartInteractionsReflex when: isAtStage() and timeAtStage mod 5 = 0 {
+//		do startInteractionsAtStage;
 	}
 	
 	action startInteractionsAtBar {
@@ -591,11 +629,24 @@ species ChillingGuest parent: Guest {
 					if (q.contents[0] = "BAR" and q.contents[1] = currentBar) {
 						do handleDancingGuestAtBar(q);
 					} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage) {
-						// TODO not implemented
+						write "Here at handle interactions of the chilling guest after invite for dance";
+						do handleDancingGuestAtStage(q);
 					}
 				}
 				match ChillingGuest.name {
-					
+					// TODO not implemented
+				}
+			}
+		}
+		
+		loop p over: proposes {
+			string senderType <- string(type_of(p.sender));
+			switch senderType {
+				match DancingGuest.name {
+					if(p.contents[0] = "STAGE" and p.contents[1] = currentStage) {
+						write "Here at handle interactions of the chilling guest after invite for dance";
+						do handleDancingGuestAtStage(p);
+					}
 				}
 			}
 		}
@@ -617,6 +668,24 @@ species ChillingGuest parent: Guest {
 			string msgContent <- agree.contents[0];
 		}
 		
+		loop inform over: informs {
+			write "[Time: " + time + "] " + name + " receives informs " + informs;
+			string senderType <- string(type_of(inform.sender));
+			switch(senderType) {
+				match DancingGuest.name {
+					if(inform.contents[0] = "STAGE" and inform.contents[1] = currentStage) {
+						// TODO should call security guard?
+						string msg <- "I am leaving!";
+						write "Time[" + time + "]: " + name + ": " +  msg + " " + inform.sender + " is following me!";
+						do end_conversation message: inform contents: ["STAGE", currentStage, msg, cycle];
+						do endTimeAtStage;
+					}
+				}
+			}
+						
+			
+		}
+		
 		do handleBeerOrderedByFriend;
 	}
 	
@@ -628,6 +697,20 @@ species ChillingGuest parent: Guest {
 			do askBarForBeer(1);
 		} else {
 			write "[Time: " + time + "] " + name + " is just chilling at bar " + currentBar.name;
+		}
+	}
+	
+	action handleDancingGuestAtStage(message p) {
+		message m <- p;
+		if (shouldDanceWithDancingGuestAtStage(m.sender as DancingGuest)) {
+			string msg <- "Sure, let's dance!";
+			write "[Time: " + time + "] " + name + " is dancing with " + m.sender; 
+			do accept_proposal message: m contents: ["STAGE", currentStage, msg, cycle];
+			happiness <- happiness + 0.1;
+		} else {
+			write "[Time: " + time + "] " + name + " does not want to dance with " + m.sender; 
+			do reject_proposal message: m contents: ["STAGE", currentStage, "No, please leave me alone.", cycle];
+			happiness <- happiness - 0.1;
 		}
 	}
 	
@@ -664,6 +747,11 @@ species ChillingGuest parent: Guest {
 	/*
 	 * RULES
 	 */
+	 
+	bool shouldDanceWithDancingGuestAtStage(DancingGuest dg) {
+		return dg.loudness < 0.5 or nervous < 0.6;
+	}
+	 
 	bool shouldGoAwayFromBar(DancingGuest dg) {
 		write name + "in should go away from bar";
 		return dg.loudness > 0.8 and positive < 0.7;
