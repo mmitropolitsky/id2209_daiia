@@ -13,7 +13,9 @@ global {
 	string TAKE_PICTURE_OF_STAGE <- "Taking a picture of stage";
 	string SAY_HI_TO_COLLEAGUE <- "Hello, colleague photographer";
 
-	string DRINKS_OFFER <- "Let's drink";
+	string DRINK_OFFER <- "Let's drink";
+	string ACCEPT_DRINK <- "OK! Let's have one!";
+	string DECLINE_DRINK <- "Unfortunately, I have to work!";
 
 	string NO_MORE_BEER -> "I do not have more beer";
 	string BEER_IN_STOCK -> "Here you are!";
@@ -869,7 +871,7 @@ species Photographer parent: Guest {
 
 	action meetPhotographerAtBar(Photographer p) {
 		if (shouldHaveABeerAtBar()) {
-			// offer a beer
+			do offerBeerToColleague(p);
 		} else {
 			do sayHiToColleagueAtBar(p);
 		}
@@ -907,20 +909,33 @@ species Photographer parent: Guest {
 							happiness <- happiness - 0.1;
 					}
 				}
+				match Photographer.name {
+					if (reject.contents[0] = "BAR" and reject.contents[1] = currentBar and reject.contents[2] = DECLINE_DRINK) {
+						write "Time[" + time + "]: " + name + "'s offer is declined by " + reject.sender;
+						happiness <- happiness - 0.1;
+					}
+				}
 			}
 		}
 
 		loop accept over: accept_proposals {
 			string senderType <- string(type_of(accept.sender));
-				switch(senderType) {
-					match DancingGuest.name {
-						if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = ACCEPT_PHOTO) {
-							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
-							happiness <- happiness + 0.1;
-						} else if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage and accept.contents[2] = ACCEPT_PHOTO) {
-							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
-							happiness <- happiness + 0.1;
-						}
+			switch(senderType) {
+				match DancingGuest.name {
+					if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = ACCEPT_PHOTO) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+						happiness <- happiness + 0.1;
+					} else if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage and accept.contents[2] = ACCEPT_PHOTO) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+						happiness <- happiness + 0.1;
+					}
+				}
+				match Photographer.name {
+					if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = ACCEPT_DRINK) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+						happiness <- happiness + 0.1;
+						do askBarForBeer(1);
+					}
 				}
 			}
 		}
@@ -966,15 +981,13 @@ species Photographer parent: Guest {
 			switch(senderType) {
 				match Photographer.name {
 					write name + " type of sender is Ph";
-					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar) {
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar and propose.contents[2] = DRINK_OFFER) {
 						if (shouldHaveABeerAtBar()) {
 							write "Time[" + time + "]: " + name + " accepting proposal to drink at " + currentBar.name;
-							do accept_proposal message: propose contents: ["OK! It's on me!"];
-//							do askBarForBeerForMyFriend(2, propose.sender);
-//							happiness of both should go up
+							do accept_proposal message: propose contents: ["BAR", currentBar, ACCEPT_DRINK];
+							do askBarForBeer(1);
 						} else {
-							do reject_proposal message: propose contents: ["Unfortunately, I have to work!"];
-//							happines of both should go down?
+							do reject_proposal message: propose contents: ["BAR", currentBar, DECLINE_DRINK];
 						}
 					}
 				}
@@ -1023,8 +1036,7 @@ species Photographer parent: Guest {
 		list<agent> initiators <- conversations collect (each.initiator);
 		if (!(initiators contains p)) {
 			write "Time[" + time + "]: " + name + " starts drinking with " + p.name;
-			do start_conversation to: [p] protocol: "fipa-propose" performative: "propose" 
-				contents: ["BAR", currentBar, "Let's drink"];
+			do start_conversation to: [p] protocol: "fipa-propose" performative: "propose" contents: ["BAR", currentBar, DRINK_OFFER];
 		}
 	}
 
@@ -1219,7 +1231,7 @@ species Bar skills: [fipa] {
 			int requestedBeer <- r.contents[1] as int;
 			
 			if (beer - requestedBeer >= 0) {
-				write "Time[" + time +"]: " + name + " will provide " + requestedBeer + "beer(s).";
+				write "Time[" + time +"]: " + name + " will provide " + requestedBeer + " beer(s).";
 				do agree message: (r) contents: [BEER_IN_STOCK, requestedBeer];
 				beer <- beer - (r.contents[1] as int);
 				if (friendAtBar != nil) {
