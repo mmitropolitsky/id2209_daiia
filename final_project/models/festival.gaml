@@ -37,7 +37,7 @@ global {
     						+ ChillingGuest count (each.drunkness > 0.8)
     						+ Photographer count (each.drunkness > 0.8);
 	
-	int numberOfGuests <- 10;
+	int numberOfGuests <- 1;
 	int barsNum <- 5;
 	int stageNum <- 5;
 	int currentBarsNum -> {length(Bar)};
@@ -50,14 +50,14 @@ global {
 	list<string> musicTypes <- ["rock", "pop", "jazz"];
 
 	init {
-		create DancingGuest number: numberOfGuests;
-		create ChillingGuest number: numberOfGuests;
+//		create DancingGuest number: numberOfGuests;
+//		create ChillingGuest number: numberOfGuests;
 		create Photographer number: numberOfGuests;
-		create SecurityGuard number: numberOfGuests;
-		create Merchant number: numberOfGuests;
+//		create SecurityGuard number: numberOfGuests;
+//		create Merchant number: numberOfGuests;
 		create Bar number: barsNum;
-		create Prison number: 1;
-		create Stage number: stageNum;
+//		create Prison number: 1;
+//		create Stage number: stageNum;
 	}
 }
 
@@ -706,10 +706,13 @@ species Photographer parent: Guest {
 	}
 
 	action startInteractionsAtBar {
+		if (debug) {
+			write "Time[" + time + "]: " + name + " starts interactions at bar.";
+		}
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
 		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
-			// TODO alone at bar
+			do aloneAtBar;
 		} else {
 			loop agentAtBar over: agentsAtBar {
 				string agentType <- string(type_of(agentAtBar));
@@ -722,8 +725,7 @@ species Photographer parent: Guest {
 //						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
 					}
 					match Photographer.name {
-						// TODO
-//						do meetPhotographerAtBar(agentAtBar as Photographer);
+						do meetPhotographerAtBar(agentAtBar as Photographer);
 					}
 				}
 			}
@@ -774,12 +776,16 @@ species Photographer parent: Guest {
 		}
 	}
 
-	action meetPhotographerAtBar {
-
+	action meetPhotographerAtBar(Photographer p) {
+		if (shouldHaveABeerAtBar()) {
+			// offer a beer
+		} else {
+			do sayHiToColleagueAtBar(p);
+		}
 	}
 
 	action meetPhotographerAtStage(Photographer p) {
-		do sayHiToColleague(p);
+		do sayHiToColleagueAtStage(p);
 	}
 
 	action handleInteractions {
@@ -835,7 +841,31 @@ species Photographer parent: Guest {
 					if (inform.contents[0] = "STAGE" and inform.contents[1] = currentStage and inform.contents[2] = SAY_HI_TO_COLLEAGUE) {
 						write "Time[" + time + "]: " + name + " says hi to " + inform.sender;
 						do end_conversation message: inform contents: ["Hello."] ;
+					} else if (inform.contents[0] = "BAR" and inform.contents[1] = currentBar and inform.contents[2] = SAY_HI_TO_COLLEAGUE) {
+						write "Time[" + time + "]: " + name + " says hi to " + inform.sender;
+						do end_conversation message: inform contents: ["Nice to see you at the bar."] ;
 					}
+				}
+			}
+		}
+
+		loop agree over: agrees {
+			string senderType <- string(type_of(agree.sender));
+			switch(senderType) {
+				match Bar.name {
+					// bar has beer
+					do drinkBeer(agree.contents[1] as int);
+				}
+			}
+			string msgContent <- agree.contents[0];
+		}
+
+		loop refuse over: refuses {
+			string senderType <- string(type_of(refuse.sender));
+			switch(senderType) {
+				match Bar.name {
+					// Bar has no more beer
+					happiness <- happiness - 0.1 * (refuse.contents[1] as int);
 				}
 			}
 		}
@@ -859,8 +889,23 @@ species Photographer parent: Guest {
 		do start_conversation to: [currentStage] protocol: "no-protocol" performative: "inform" contents: ["STAGE", currentStage, TAKE_PICTURE_OF_STAGE];
 	}
 
-	action sayHiToColleague(Photographer p) {
+	action sayHiToColleagueAtBar(Photographer p) {
+		do start_conversation to: [p] protocol: "no-protocol" performative: "inform" contents: ["BAR", currentBar, SAY_HI_TO_COLLEAGUE];
+	}
+
+	action sayHiToColleagueAtStage(Photographer p) {
 		do start_conversation to: [p] protocol: "no-protocol" performative: "inform" contents: ["STAGE", currentStage, SAY_HI_TO_COLLEAGUE];
+	}
+
+	action aloneAtBar {
+		if (shouldHaveABeerAtBar()) {
+			do askBarForBeer(1);
+		}
+	}
+
+	action askBarForBeer(int quantity) {
+		write "Time[" + time + "]: " + name + " is asking for a beer at bar " + currentBar.name;
+		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["I would like beer.", quantity];
 	}
 
 	/*
@@ -877,6 +922,10 @@ species Photographer parent: Guest {
 
 	bool shouldTakeAPhotoAtStage {
 		return creative > 0.2 and laziness < 0.7;
+	}
+
+	bool shouldHaveABeerAtBar {
+		return !isWorking;
 	}
 }
 
@@ -1050,14 +1099,14 @@ species Bar skills: [fipa] {
 			int requestedBeer <- r.contents[1] as int;
 			
 			if (beer - requestedBeer >= 0) {
-				write "Agree to give you a beer.";
+				write "Time[" + time +"]: " + name + " will provide " + requestedBeer + "beer(s).";
 				do agree message: (r) contents: [BEER_IN_STOCK, requestedBeer];
 				beer <- beer - (r.contents[1] as int);
 				if (friendAtBar != nil) {
 					do start_conversation to: [friendAtBar] protocol: 'no-protocol' performative: 'inform' contents: [BEER_IN_STOCK, requestedBeer];
 				} 
 			} else {
-				write "No more beers.";
+				write "Time[" + time +"]: " + name + " has no more beers.";
 				do refuse message: (r) contents: [NO_MORE_BEER, requestedBeer] ;
 				if (friendAtBar != nil) {
 					do start_conversation to: [friendAtBar] protocol: 'no-protocol' performative: 'inform' contents: [NO_MORE_BEER, requestedBeer];
