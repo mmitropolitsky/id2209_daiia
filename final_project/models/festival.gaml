@@ -23,6 +23,10 @@ global {
 	string MERCHANT_NOT_TRUSTWORTHY <- "You are not trustworthy.";
 	float MERCHANT_WORKING_AT_BAR <- 0.2;
 
+	string PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO <- "I will take a picture of you.";
+	string ACCEPT_PHOTO <- "Sure, go ahead!";
+	string DECLINE_PHOTO <- "No, I am not in the mood.";
+
 	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest) + length(Photographer)};
     int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
     						+ ChillingGuest count (each.happiness > 0.8)
@@ -181,7 +185,7 @@ species Guest skills: [moving, fipa] {
 			} else if (msg = NO_MORE_BEER) {
 				happiness <- happiness - 0.1 * (i.contents[1] as int);
 			}
-			do end_conversation message: i contents: ["Alright."] ;
+			do end_conversation message: i contents: ["Alright."];
 		}
 	}
 }
@@ -291,6 +295,19 @@ species DancingGuest parent: Guest {
 						} else {
 							write "Time[" + time + "]: " + name + " is not buying from " + propose.sender;
 							do reject_proposal message: propose contents: ["BAR", currentBar, MERCHANT_NOT_TRUSTWORTHY];
+						}
+					}
+				}
+				// after being approached by the photographer for a picture, accept it or decline it
+				match Photographer.name {
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar and propose.contents[2] = PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO) {
+						write "Time[" + time + "]: " + name + " is offered a picture from " + propose.sender;
+						if (shouldAcceptPicture()) {
+							write "Time[" + time + "]: " + name + " is accepting a picture from " + propose.sender;
+							do accept_proposal message: propose contents: ["BAR", currentBar, ACCEPT_PHOTO];
+						} else {
+							write "Time[" + time + "]: " + name + " is declining a picture from " + propose.sender;
+							do reject_proposal message: propose contents: ["BAR", currentBar, DECLINE_PHOTO];
 						}
 					}
 				}
@@ -419,7 +436,8 @@ species DancingGuest parent: Guest {
 	// MEET PHOTOGRAPHER
 	
 	action meetPhotographerAtBar(Photographer p) {
-		if (shouldAskForPicture()) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		if ((!(initiators contains p)) and shouldAskForPicture()) {
 			write name + " asks for a picture from " + p;
 			do start_conversation to: [p] protocol: "fipa-query" performative: "query" 
 				contents: ["BAR", currentBar, "Would you take a picture of me?"];
@@ -507,6 +525,10 @@ species DancingGuest parent: Guest {
 	
 	bool shouldBuyFromMerchantAtBar(Merchant m) {
 		return m.trustworthy > 0.3;
+	}
+
+	bool shouldAcceptPicture {
+		return confident >= 0.5;
 	}
 }
 
@@ -655,11 +677,56 @@ species Photographer parent: Guest {
 	
 	image_file my_icon <- image_file("../includes/data/photographer.png");
 	rgb myColor <- #pink;
-	
+
+	bool isWorking <- flip(0.5);
+	float laziness <- rnd(0.0, 1.0) with_precision 2;
+	float creative <- rnd(0.0, 1.0) with_precision 2;
+
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractions;
 	}
+
+	reflex isAtBarToStartInteractionsReflex when: isAtBar() and timeAtBar mod 5 = 0 {
+		do startInteractionsAtBar;
+	}
+
+	action startInteractionsAtBar {
+		write "Time[" + time + "]: " + name + " start interactions at bar";
+		list<agent> agentsAtBar <- agents_overlapping(currentBar);
+		remove self from: agentsAtBar;
+		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
+			// TODO alone at bar
+		} else {
+			loop agentAtBar over: agentsAtBar {
+				string agentType <- string(type_of(agentAtBar));
+				switch(agentType) {
+					match DancingGuest.name {
+						do meetDancingGuestAtBar(agentAtBar as DancingGuest);
+					}
+					match ChillingGuest.name {
+						// TODO
+//						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
+					}
+					match Photographer.name {
+						// TODO
+//						do meetPhotographerAtBar(agentAtBar as Photographer);
+					}
+				}
+			}
+		}
+	}
+
+	// MEET DANCING GUEST
 	
+	action meetDancingGuestAtBar(DancingGuest d) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
+		if ((!(initiators contains d)) and shouldTakeAPhoto()) {
+			write "Time[" + time + "]: " + name + " is taking a photo of " + d.name;
+			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" contents: ["BAR", currentBar, PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO];
+		}
+	}
+
 	action handleInteractions {
 		if (!(empty(queries))) {
 			loop q over: queries {
@@ -675,6 +742,30 @@ species Photographer parent: Guest {
 				}
 			}
 		}
+
+		loop reject over: reject_proposals {
+			string senderType <- string(type_of(reject.sender));
+			switch(senderType) {
+				match DancingGuest.name {
+					if (reject.contents[0] = "BAR" and reject.contents[1] = currentBar and reject.contents[2] = DECLINE_PHOTO) {
+							write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
+							happiness <- happiness - 0.1;
+					}
+				}
+			}
+		}
+
+		loop accept over: accept_proposals {
+			string senderType <- string(type_of(accept.sender));
+				switch(senderType) {
+					match DancingGuest.name {
+						if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = ACCEPT_PHOTO) {
+							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+							happiness <- happiness + 0.1;
+						}
+				}
+			}
+		}
 	}
 	
 	action handleDancingGuestAtBar(message p) {
@@ -687,8 +778,14 @@ species Photographer parent: Guest {
 		}
 	}
 	
+	// RULES
+
 	bool acceptToTakeAPicture {
 		return flip(0.1);
+	}
+
+	bool shouldTakeAPhoto {
+		return isWorking and laziness < 0.8;
 	}
 }
 
@@ -885,17 +982,17 @@ species Prison {
 experiment fest_experiment type: gui {
 //	parameter "Initial number of bars: " var: barsNum category: "Fun places at the festival" ;
 	output {
-		display main_display {
-            species Guest aspect: icon;
-			species DancingGuest aspect: icon;
-			species ChillingGuest aspect: icon;
-			species Bar aspect: icon;
-			species Stage aspect: icon;
-			species Photographer aspect: icon;
-			species Prison aspect: icon;
-			species SecurityGuard aspect: icon;
-			species Merchant aspect: icon;
-        }
+//		display main_display {
+//            species Guest aspect: icon;
+//			species DancingGuest aspect: icon;
+//			species ChillingGuest aspect: icon;
+//			species Bar aspect: icon;
+//			species Stage aspect: icon;
+//			species Photographer aspect: icon;
+//			species Prison aspect: icon;
+//			species SecurityGuard aspect: icon;
+//			species Merchant aspect: icon;
+//        }
 
         display info_display {
             species Guest aspect: info;
@@ -909,18 +1006,18 @@ experiment fest_experiment type: gui {
 			species Merchant aspect: info;
         }
 		
-		display Happiness_information refresh: every(5#cycles) {
-			chart "Happiness and drunkness correlation" type: series size: {1,0.5} position: {0, 0} {
-                data "number_of_amused_guests" value: amusedGuests color: #blue;
-                data "number_of_drunk_guests" value: drunkPeople color: #red;
-            }
-            chart "DancingGuest Happiness Distribution" type: histogram background: #lightgray size: {0.5,0.5} position: {0, 0.5} {
-                data "[0;0.25]" value: DancingGuest count (each.happiness <= 0.25) color:#blue;
-                data "[0.25;0.5]" value: DancingGuest count ((each.happiness > 0.25) and (each.happiness <= 0.5)) color:#blue;
-                data "[0.5;0.75]" value: DancingGuest count ((each.happiness > 0.5) and (each.happiness <= 0.75)) color:#blue;
-                data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
-            }
-		}
+//		display Happiness_information refresh: every(5#cycles) {
+//			chart "Happiness and drunkness correlation" type: series size: {1,0.5} position: {0, 0} {
+//                data "number_of_amused_guests" value: amusedGuests color: #blue;
+//                data "number_of_drunk_guests" value: drunkPeople color: #red;
+//            }
+//            chart "DancingGuest Happiness Distribution" type: histogram background: #lightgray size: {0.5,0.5} position: {0, 0.5} {
+//                data "[0;0.25]" value: DancingGuest count (each.happiness <= 0.25) color:#blue;
+//                data "[0.25;0.5]" value: DancingGuest count ((each.happiness > 0.25) and (each.happiness <= 0.5)) color:#blue;
+//                data "[0.5;0.75]" value: DancingGuest count ((each.happiness > 0.5) and (each.happiness <= 0.75)) color:#blue;
+//                data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
+//            }
+//		}
 		monitor "Number of amused guests: " value: amusedGuests;
     	monitor "All guests: " value: numOfGuests;
 	}
