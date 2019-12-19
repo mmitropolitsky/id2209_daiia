@@ -85,7 +85,7 @@ species Guest skills: [moving, fipa] {
 	point randomPoint <- nil;
 	
 	int TIME_AT_BAR <- 30;
-	int TIME_AT_STAGE <- 300;
+	int TIME_AT_STAGE <- 100;
 	int TIME_AT_PRISON <- 10;
 	
 	int timeAtBar <- TIME_AT_BAR update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
@@ -677,6 +677,7 @@ species ChillingGuest parent: Guest {
 						// TODO should call security guard?
 						string msg <- "I am leaving!";
 						write "Time[" + time + "]: " + name + ": " +  msg + " " + inform.sender + " is following me!";
+						happiness <- happiness - 0.2;
 						do end_conversation message: inform contents: ["STAGE", currentStage, msg, cycle];
 						do endTimeAtStage;
 					}
