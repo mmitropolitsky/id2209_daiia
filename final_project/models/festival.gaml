@@ -29,6 +29,7 @@ global {
 	string MERCHANT_NOT_TRUSTWORTHY <- "You are not trustworthy.";
 	float MERCHANT_WORKING_AT_BAR <- 0.2;
 
+	string PICTURE_QUERY <- "Would you take a picture of me?";
 	string PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO <- "I will take a picture of you.";
 	string ACCEPT_PHOTO <- "Sure, go ahead!";
 	string DECLINE_PHOTO <- "No, I am not in the mood.";
@@ -244,6 +245,8 @@ species DancingGuest parent: Guest {
 				match Photographer.name {
 					if (agree.contents[0] = "BAR" and agree.contents[1] = currentBar) {
 						happiness <- happiness + 0.05;
+					} else if (agree.contents[0] = "STAGE" and agree.contents[1] = currentStage) {
+						happiness <- happiness + 0.05;
 					}
 				}
 				match Bar.name {
@@ -282,7 +285,11 @@ species DancingGuest parent: Guest {
 					}
 				}
 				match Photographer.name {
-					happiness <- happiness - 0.05;
+					if (refuse.contents[0] = "BAR" and refuse.contents[1] = currentBar) {
+						happiness <- happiness - 0.05;
+					} else if (refuse.contents[0] = "STAGE" and refuse.contents[1] = currentStage) {
+						happiness <- happiness - 0.05;
+					}
 				}
 				match Bar.name {
 					happiness <- happiness - 0.1 * (refuse.contents[1] as int);
@@ -417,6 +424,10 @@ species DancingGuest parent: Guest {
 						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
 						write "[Time: " + time + "] " + name + " is dancing now at stage " + currentStage.name + " with " + agentAtStage.name;
 					}
+					match Photographer.name {
+						do meetPhotographerAtStage(agentAtStage as Photographer);
+						write "[Time: " + time + "] " + name + " is dancing now at stage " + currentStage.name + " with " + agentAtStage.name;
+					}
 				}
 			}
 		}
@@ -476,15 +487,20 @@ species DancingGuest parent: Guest {
 	
 	action meetPhotographerAtBar(Photographer p) {
 		list<agent> initiators <- conversations collect (each.initiator);
-		if ((!(initiators contains p)) and shouldAskForPicture()) {
+		if ((!(initiators contains p)) and shouldAskForPictureAtBar()) {
 			write name + " asks for a picture from " + p;
-			do start_conversation to: [p] protocol: "fipa-query" performative: "query" 
-				contents: ["BAR", currentBar, "Would you take a picture of me?"];
+			do start_conversation to: [p] protocol: "fipa-query" performative: "query"
+				contents: ["BAR", currentBar, PICTURE_QUERY];
 		}
 	}
 	
 	action meetPhotographerAtStage(Photographer p) {
-		// TODO
+		list<agent> initiators <- conversations collect (each.initiator);
+		if ((!(initiators contains p)) and shouldAskForPictureAtStage()) {
+			write name + " asks for a picture from " + p;
+			do start_conversation to: [p] protocol: "fipa-query" performative: "query" 
+				contents: ["STAGE", currentStage, PICTURE_QUERY];
+		}
 	}
 
 	// MEET MERCHANT
@@ -559,15 +575,19 @@ species DancingGuest parent: Guest {
 		// Here loudness is equivalent to annoying
 		return confident > 0.9 and loudness > 0.8;
 	}
-	
-	bool shouldAskForPicture {
+
+	bool shouldAskForPictureAtStage {
+		return confident > 0.5;
+	}
+
+	bool shouldAskForPictureAtBar {
 		return confident > 0.8;
 	}
-	
+
 	bool shouldApproachMerchantAtBar {
 		return confident > 0.5 and !hasApproachedMerchant;
 	}
-	
+
 	bool shouldBuyFromMerchantAtBar(Merchant m) {
 		return m.trustworthy > 0.3;
 	}
@@ -869,6 +889,8 @@ species Photographer parent: Guest {
 		}
 	}
 
+	// MEET PHOTOGRAPHER
+
 	action meetPhotographerAtBar(Photographer p) {
 		if (shouldHaveABeerAtBar()) {
 			do offerBeerToColleague(p);
@@ -887,10 +909,10 @@ species Photographer parent: Guest {
 				string senderType <- string(type_of(q.sender));
 				switch senderType {
 					match DancingGuest.name {
-						if (q.contents[0] = "BAR" and q.contents[1] = currentBar) {
+						if (q.contents[0] = "BAR" and q.contents[1] = currentBar and q.contents[2] = PICTURE_QUERY) {
 							do handleDancingGuestAtBar(q);
-						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage) {
-							// TODO not implemented
+						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage and q.contents[2] = PICTURE_QUERY) {
+							do handleDancingGuestAtStage(q);
 						}
 					}
 				}
@@ -1006,6 +1028,16 @@ species Photographer parent: Guest {
 		} else {
 			write "Time[" + time + "]: Declining a picture from " + p.sender;
 			do refuse message: p contents: ["BAR", currentBar, "Leave me alone"] ;
+		}
+	}
+
+	action handleDancingGuestAtStage(message p) {
+		if (acceptToTakeAPicture()) {
+			write "Time[" + time + "]: Accepting to take a picture of " + p.sender;
+			do agree message: p contents: ["STAGE", currentStage, "I will accept it now."] ;
+		} else {
+			write "Time[" + time + "]: Declining a picture from " + p.sender;
+			do refuse message: p contents: ["STAGE", currentStage, "Leave me alone"] ;
 		}
 	}
 
