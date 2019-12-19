@@ -313,6 +313,7 @@ species DancingGuest parent: Guest {
 					} else if (propose.contents[0] = "STAGE" and propose.contents[1] = currentStage and propose.contents[2] = PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO) {
 						write "Time[" + time + "]: " + name + " is accepting a picture from " + propose.sender;
 						do accept_proposal message: propose contents: ["STAGE", currentStage, ACCEPT_PHOTO];
+						happiness <- happiness + 0.05;
 					}
 				}
 			}
