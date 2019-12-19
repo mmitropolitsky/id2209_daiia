@@ -13,6 +13,8 @@ global {
 	string TAKE_PICTURE_OF_STAGE <- "Taking a picture of stage";
 	string SAY_HI_TO_COLLEAGUE <- "Hello, colleague photographer";
 
+	string DRINKS_OFFER <- "Let's drink";
+
 	string NO_MORE_BEER -> "I do not have more beer";
 	string BEER_IN_STOCK -> "Here you are!";
 	string SECURITY_GUARD_HEADING_TO_YOU <- "I will catch you!";
@@ -869,6 +871,26 @@ species Photographer parent: Guest {
 				}
 			}
 		}
+
+		loop propose over: proposes {
+			string senderType <- string(type_of(propose.sender));
+			switch(senderType) {
+				match Photographer.name {
+					write name + " type of sender is Ph";
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar) {
+						if (shouldHaveABeerAtBar()) {
+							write "Time[" + time + "]: " + name + " accepting proposal to drink at " + currentBar.name;
+							do accept_proposal message: propose contents: ["OK! It's on me!"];
+//							do askBarForBeerForMyFriend(2, propose.sender);
+//							happiness of both should go up
+						} else {
+							do reject_proposal message: propose contents: ["Unfortunately, I have to work!"];
+//							happines of both should go down?
+						}
+					}
+				}
+			}
+		}
 	}
 	
 	/*
@@ -906,6 +928,15 @@ species Photographer parent: Guest {
 	action askBarForBeer(int quantity) {
 		write "Time[" + time + "]: " + name + " is asking for a beer at bar " + currentBar.name;
 		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["I would like beer.", quantity];
+	}
+
+	action offerBeerToColleague(Photographer p) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		if (!(initiators contains p)) {
+			write "Time[" + time + "]: " + name + " starts drinking with " + p.name;
+			do start_conversation to: [p] protocol: "fipa-propose" performative: "propose" 
+				contents: ["BAR", currentBar, "Let's drink"];
+		}
 	}
 
 	/*
