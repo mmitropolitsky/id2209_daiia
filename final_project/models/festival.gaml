@@ -10,7 +10,9 @@ model festival
 /* Insert your model definition here */
 
 global {
-	
+	string TAKE_PICTURE_OF_STAGE <- "Taking a picture of stage";
+	string SAY_HI_TO_COLLEAGUE <- "Hello, colleague photographer";
+
 	string NO_MORE_BEER -> "I do not have more beer";
 	string BEER_IN_STOCK -> "Here you are!";
 	string SECURITY_GUARD_HEADING_TO_YOU <- "I will catch you!";
@@ -704,7 +706,6 @@ species Photographer parent: Guest {
 	}
 
 	action startInteractionsAtBar {
-		write "Time[" + time + "]: " + name + " start interactions at bar";
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
 		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
@@ -730,11 +731,10 @@ species Photographer parent: Guest {
 	}
 
 	action startInteractionsAtStage {
-		write "Time[" + time + "]: " + name + " start interactions at stage";
 		list<agent> agentsAtStage <- agents_overlapping(currentStage);
 		remove self from: agentsAtStage;
 		if (empty(agentsAtStage) or length(agentsAtStage) = 0) {
-			// TODO alone at bar
+			do takePictureOfStage;
 		} else {
 			loop agentAtStage over: agentsAtStage {
 				string agentType <- string(type_of(agentAtStage));
@@ -747,8 +747,7 @@ species Photographer parent: Guest {
 //						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
 					}
 					match Photographer.name {
-						// TODO
-//						do meetPhotographerAtStage(agentAtStage as Photographer);
+						do meetPhotographerAtStage(agentAtStage as Photographer);
 					}
 				}
 			}
@@ -773,6 +772,14 @@ species Photographer parent: Guest {
 			write "Time[" + time + "]: " + name + " is taking a photo of " + d.name;
 			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" contents: ["STAGE", currentStage, PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO];
 		}
+	}
+
+	action meetPhotographerAtBar {
+
+	}
+
+	action meetPhotographerAtStage(Photographer p) {
+		do sayHiToColleague(p);
 	}
 
 	action handleInteractions {
@@ -820,19 +827,45 @@ species Photographer parent: Guest {
 				}
 			}
 		}
-	}
-	
-	action handleDancingGuestAtBar(message p) {
-		if (acceptToTakeAPicture()) {
-			write "Accepting to take a picture of " + p.sender;
-			do agree message: p contents: ["BAR", currentBar, "I will accept it now."] ;
-		} else {
-			write "Declining a picture from " + p.sender;
-			do refuse message: p contents: ["BAR", currentBar, "Leave me alone"] ;
+
+		loop inform over: informs {
+			string senderType <- string(type_of(inform.sender));
+			switch(senderType) {
+				match Photographer.name {
+					if (inform.contents[0] = "STAGE" and inform.contents[1] = currentStage and inform.contents[2] = SAY_HI_TO_COLLEAGUE) {
+						write "Time[" + time + "]: " + name + " says hi to " + inform.sender;
+						do end_conversation message: inform contents: ["Hello."] ;
+					}
+				}
+			}
 		}
 	}
 	
-	// RULES
+	/*
+	 * ACTIONS
+	 */
+
+	action handleDancingGuestAtBar(message p) {
+		if (acceptToTakeAPicture()) {
+			write "Time[" + time + "]: Accepting to take a picture of " + p.sender;
+			do agree message: p contents: ["BAR", currentBar, "I will accept it now."] ;
+		} else {
+			write "Time[" + time + "]: Declining a picture from " + p.sender;
+			do refuse message: p contents: ["BAR", currentBar, "Leave me alone"] ;
+		}
+	}
+
+	action takePictureOfStage {
+		do start_conversation to: [currentStage] protocol: "no-protocol" performative: "inform" contents: ["STAGE", currentStage, TAKE_PICTURE_OF_STAGE];
+	}
+
+	action sayHiToColleague(Photographer p) {
+		do start_conversation to: [p] protocol: "no-protocol" performative: "inform" contents: ["STAGE", currentStage, SAY_HI_TO_COLLEAGUE];
+	}
+
+	/*
+	 * RULES
+	 */
 
 	bool acceptToTakeAPicture {
 		return flip(0.1);
@@ -975,6 +1008,20 @@ species Stage skills: [fipa] {
 	
 	aspect icon {
 		draw my_icon size: 5;
+	}
+
+	reflex handleInteractions {
+		loop inform over: informs {
+			string senderType <- string(type_of(inform.sender));
+			switch(senderType) {
+				match Photographer.name {
+					if (inform.contents[0] = "STAGE" and inform.contents[1] = self and inform.contents[2] = TAKE_PICTURE_OF_STAGE) {
+						write "Time[" + time + "]: " + name + " will have a picture taken by " + inform.sender;
+						do end_conversation message: inform contents: ["Awesome."] ;
+					}
+				}
+			}
+		}
 	}
 }
 
