@@ -203,6 +203,7 @@ species DancingGuest parent: Guest {
 
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractions;
+		//approach merchant only once per stay at the bar
 		if (timeAtBar mod 30 = 0) {
 			hasApproachedMerchant <- false;
 		}
@@ -309,6 +310,9 @@ species DancingGuest parent: Guest {
 							write "Time[" + time + "]: " + name + " is declining a picture from " + propose.sender;
 							do reject_proposal message: propose contents: ["BAR", currentBar, DECLINE_PHOTO];
 						}
+					} else if (propose.contents[0] = "STAGE" and propose.contents[1] = currentStage and propose.contents[2] = PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO) {
+						write "Time[" + time + "]: " + name + " is accepting a picture from " + propose.sender;
+						do accept_proposal message: propose contents: ["STAGE", currentStage, ACCEPT_PHOTO];
 					}
 				}
 			}
@@ -690,6 +694,14 @@ species Photographer parent: Guest {
 		do startInteractionsAtBar;
 	}
 
+	reflex isAtStageReflex when: isAtStage() {
+		do handleInteractions;
+	}
+
+	reflex isAtStageToStartInteractionsReflex when: isAtStage() and timeAtStage mod 10 = 0 {
+		do startInteractionsAtStage;
+	}
+
 	action startInteractionsAtBar {
 		write "Time[" + time + "]: " + name + " start interactions at bar";
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
@@ -716,14 +728,49 @@ species Photographer parent: Guest {
 		}
 	}
 
+	action startInteractionsAtStage {
+		write "Time[" + time + "]: " + name + " start interactions at stage";
+		list<agent> agentsAtStage <- agents_overlapping(currentStage);
+		remove self from: agentsAtStage;
+		if (empty(agentsAtStage) or length(agentsAtStage) = 0) {
+			// TODO alone at bar
+		} else {
+			loop agentAtStage over: agentsAtStage {
+				string agentType <- string(type_of(agentAtStage));
+				switch(agentType) {
+					match DancingGuest.name {
+						do meetDancingGuestAtStage(agentAtStage as DancingGuest);
+					}
+					match ChillingGuest.name {
+						// TODO
+//						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
+					}
+					match Photographer.name {
+						// TODO
+//						do meetPhotographerAtStage(agentAtStage as Photographer);
+					}
+				}
+			}
+		}
+	}
+
 	// MEET DANCING GUEST
-	
+
 	action meetDancingGuestAtBar(DancingGuest d) {
 		list<agent> initiators <- conversations collect (each.initiator);
 		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
-		if ((!(initiators contains d)) and shouldTakeAPhoto()) {
+		if ((!(initiators contains d)) and shouldTakeAPhotoAtBar()) {
 			write "Time[" + time + "]: " + name + " is taking a photo of " + d.name;
 			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" contents: ["BAR", currentBar, PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO];
+		}
+	}
+
+	action meetDancingGuestAtStage(DancingGuest d) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
+		if ((!(initiators contains d)) and shouldTakeAPhotoAtStage()) {
+			write "Time[" + time + "]: " + name + " is taking a photo of " + d.name;
+			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" contents: ["STAGE", currentStage, PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO];
 		}
 	}
 
@@ -750,6 +797,9 @@ species Photographer parent: Guest {
 					if (reject.contents[0] = "BAR" and reject.contents[1] = currentBar and reject.contents[2] = DECLINE_PHOTO) {
 							write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
 							happiness <- happiness - 0.1;
+					} else if (reject.contents[0] = "STAGE" and reject.contents[1] = currentStage and reject.contents[2] = DECLINE_PHOTO) {
+							write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
+							happiness <- happiness - 0.1;
 					}
 				}
 			}
@@ -760,6 +810,9 @@ species Photographer parent: Guest {
 				switch(senderType) {
 					match DancingGuest.name {
 						if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = ACCEPT_PHOTO) {
+							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+							happiness <- happiness + 0.1;
+						} else if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage and accept.contents[2] = ACCEPT_PHOTO) {
 							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
 							happiness <- happiness + 0.1;
 						}
@@ -784,8 +837,12 @@ species Photographer parent: Guest {
 		return flip(0.1);
 	}
 
-	bool shouldTakeAPhoto {
+	bool shouldTakeAPhotoAtBar {
 		return isWorking and laziness < 0.8;
+	}
+
+	bool shouldTakeAPhotoAtStage {
+		return creative > 0.2 and laziness < 0.7;
 	}
 }
 
