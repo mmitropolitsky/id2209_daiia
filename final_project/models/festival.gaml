@@ -614,7 +614,7 @@ species ChillingGuest parent: Guest {
 	}
 	
 	reflex isAtStageToStartInteractionsReflex when: isAtStage() and timeAtStage mod 5 = 0 {
-//		do startInteractionsAtStage;
+		do startInteractionsAtStage;
 	}
 	
 	action startInteractionsAtBar {
@@ -642,6 +642,28 @@ species ChillingGuest parent: Guest {
 				}
 			}
 		}	
+	}
+	
+	action startInteractionsAtStage {
+		write name + "start interactions at stage " + time;
+		list<agent> agentsAtStage <- agents_overlapping(currentStage);
+		remove self from: agentsAtStage;
+		write "AGENTS AT STAGE " + agentsAtStage;
+		if(empty(agentsAtStage) or length(agentsAtStage) = 0) {
+			write "shouldnt be here";
+			// TODO do aloneAtStage;
+		} else {
+			loop agentAtStage over: agentsAtStage {
+				string agentType <- string(type_of(agentAtStage));
+				write "HERE with agent type" + agentType;
+				switch(agentType) {
+					match Photographer.name {
+						write "here";
+						do meetPhotographerAtStage(agentAtStage as Photographer);
+					}
+				}
+			}
+		}
 	}
 	
 	
@@ -678,13 +700,14 @@ species ChillingGuest parent: Guest {
 					write "Here at handle interactions of the chilling guest after photo proposal";
 					if (p.contents[0] = "BAR" and p.contents[1] = currentBar) {
 						do handlePhotoProposalFromPhotographerAtBar(p);
+					} else if (p.contents[0] = "STAGE" and p.contents[1] = currentStage) {
+						do handlePhotoProposalFromPhotographerAtStage(p);
 					}
 				}
 			}
 		}
 		
 		loop agree over: agrees {
-			write name + " recieves " + agree;
 			string senderType <- string(type_of(agree.sender));
 			switch(senderType) {
 				match Bar.name {
@@ -696,8 +719,33 @@ species ChillingGuest parent: Guest {
 						happiness <- happiness - 0.1;
 					}
 				}
+				match Photographer.name {
+					if (agree.contents[0] = "BAR" and agree.contents[1] = currentBar) {
+						// TODO
+						happiness <- happiness + 0.05;
+					} else if (agree.contents[0] = "STAGE" and agree.contents[1] = currentStage) {
+						write "[Time: " + time + "] " + agree.sender + " will now take a picture of me." + name;  
+						happiness <- happiness + 0.05;
+					}
+				}
 			}
+			
 			string msgContent <- agree.contents[0];
+		}
+		
+		loop refuse over: refuses {
+			string senderType <- string(type_of(refuse.sender));
+			switch(senderType) {
+				match Photographer.name {
+					if (refuse.contents[0] = "BAR" and refuse.contents[1] = currentBar) {
+						// TODO
+						happiness <- happiness - 0.05;
+					} else if (refuse.contents[0] = "STAGE" and refuse.contents[1] = currentStage) {
+						write "[Time: " + time + "] " + refuse.sender + " decided not to take a picture of me." + name;  
+						happiness <- happiness - 0.05;
+					}
+				}
+			}
 		}
 		
 		loop inform over: informs {
@@ -760,6 +808,18 @@ species ChillingGuest parent: Guest {
 		}
 	}
 	
+	action meetPhotographerAtStage(Photographer p) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
+		if ((!(initiators contains p)) and shouldAskPhotographerForAPhotoAtStage(p)) {
+			write "Time[" + time + "]: " + name + " asks " + p.name + " to take a photo of them at stage " + currentStage.name;
+			do start_conversation to: [p] protocol: "fipa-propose" performative: "query" 
+				contents: ["STAGE", currentStage, PICTURE_QUERY, cycle];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to ask for a photo from " + p.name;
+		}
+	}
+	
 	
 	// AT BAR
 	action handleBeerProposalFromDancingGuestAtBar(message p) {
@@ -782,6 +842,18 @@ species ChillingGuest parent: Guest {
 		} else {
 			write "Time[" + time + "]: Declining a photo from " + p.sender;
 			do reject_proposal message: p contents: ["BAR", currentBar, DECLINE_PHOTO] ;
+			happiness <- happiness - 0.1;
+		}
+	}
+	
+	action handlePhotoProposalFromPhotographerAtStage(message p) {
+		if (acceptPhotoBeingTakenAtStage()) {
+			write "Time[" + time + "]: Accepting a photo from " + p.sender + "on stage " + currentStage.name;
+			do accept_proposal message: p contents: ["STAGE", currentStage, ACCEPT_PHOTO, cycle] ;
+			happiness <- happiness + 0.1;
+		} else {
+			write "Time[" + time + "]: Declining a photo from " + p.sender + "on stage " + currentStage.name;
+			do reject_proposal message: p contents: ["STAGE", currentStage, DECLINE_PHOTO] ;
 			happiness <- happiness - 0.1;
 		}
 	}
@@ -811,6 +883,14 @@ species ChillingGuest parent: Guest {
 	
 	bool acceptPhotoBeingTakenAtBar {
 		return positive > 0.6 and nervous < 0.5;
+	}
+	
+	bool acceptPhotoBeingTakenAtStage {
+		return nervous < 0.5 and positive > 0.5;
+	}
+	
+	bool shouldAskPhotographerForAPhotoAtStage(Photographer p) {
+		return cautious < 0.5 and positive > 0.6 and p.creative > 0.4;
 	}
 	
 	bool shouldOrderABeerWhenAlone {
@@ -872,6 +952,7 @@ species Photographer parent: Guest {
 	}
 
 	action startInteractionsAtStage {
+		write name + time + " start interactions at stage";
 		list<agent> agentsAtStage <- agents_overlapping(currentStage);
 		remove self from: agentsAtStage;
 		if (empty(agentsAtStage) or length(agentsAtStage) = 0) {
@@ -885,7 +966,7 @@ species Photographer parent: Guest {
 					}
 					match ChillingGuest.name {
 						// TODO
-//						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
+						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
 					}
 					match Photographer.name {
 						do meetPhotographerAtStage(agentAtStage as Photographer);
@@ -931,6 +1012,18 @@ species Photographer parent: Guest {
 		}
 	}
 	
+	action meetChillingGuestAtStage(ChillingGuest g) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
+		if ((!(initiators contains g)) and shouldTakeAPhotoOfChillingGuestAtStage()) {
+			write "Time[" + time + "]: " + name + " is taking a photo of " + g.name + " at stage " + currentStage.name;
+			do start_conversation to: [g] protocol: "fipa-propose" performative: "propose" 
+				contents: ["STAGE", currentStage, PHOTOGRAPHER_OFFERS_TO_TAKE_A_PHOTO, cycle];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to offer to take a photo of " + g.name;
+		}
+	}
+	
 	// MEET PHOTOGRAPHER
 
 	action meetPhotographerAtBar(Photographer p) {
@@ -955,6 +1048,13 @@ species Photographer parent: Guest {
 							do handleDancingGuestAtBar(q);
 						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage and q.contents[2] = PICTURE_QUERY) {
 							do handleDancingGuestAtStage(q);
+						}
+					}
+					match ChillingGuest.name {
+						if (q.contents[0] = "BAR" and q.contents[1] = currentBar and q.contents[2] = PICTURE_QUERY) {
+							// TODO
+						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage and q.contents[2] = PICTURE_QUERY) {
+							do handleChillingGuestAtStage(q);
 						}
 					}
 				}
@@ -1085,9 +1185,11 @@ species Photographer parent: Guest {
 		if (acceptToTakeAPicture()) {
 			write "Time[" + time + "]: Accepting to take a picture of " + p.sender;
 			do agree message: p contents: ["BAR", currentBar, "I will accept it now."] ;
+			happiness <- happiness + 0.1;
 		} else {
 			write "Time[" + time + "]: Declining a picture from " + p.sender;
 			do refuse message: p contents: ["BAR", currentBar, "Leave me alone"] ;
+			happiness <- happiness - 0.1;
 		}
 	}
 
@@ -1095,12 +1197,26 @@ species Photographer parent: Guest {
 		if (acceptToTakeAPicture()) {
 			write "Time[" + time + "]: Accepting to take a picture of " + p.sender;
 			do agree message: p contents: ["STAGE", currentStage, "I will accept it now."] ;
+			happiness <- happiness + 0.1;
 		} else {
 			write "Time[" + time + "]: Declining a picture from " + p.sender;
 			do refuse message: p contents: ["STAGE", currentStage, "Leave me alone"] ;
+			happiness <- happiness - 0.1;
 		}
 	}
 
+	action handleChillingGuestAtStage(message p) {
+		if (acceptToTakeAPictureOfChillingGuestAtStage(p.sender)) {
+			write "Time[" + time + "]: Accepting to take a picture of " + p.sender;
+			do agree message: p contents: ["STAGE", currentStage, "I will accept it now."] ;
+			happiness <- happiness + 0.1;
+		} else {
+			write "Time[" + time + "]: Declining a picture from " + p.sender;
+			do refuse message: p contents: ["STAGE", currentStage, "Leave me alone"] ;
+			happiness <- happiness - 0.1;
+		}
+	}
+	
 	action takePictureOfStage {
 		do start_conversation to: [currentStage] protocol: "no-protocol" performative: "inform" contents: ["STAGE", currentStage, TAKE_PICTURE_OF_STAGE];
 	}
@@ -1137,7 +1253,11 @@ species Photographer parent: Guest {
 	 */
 
 	bool acceptToTakeAPicture {
-		return flip(0.1);
+		return flip(0.7);
+	}
+	
+	bool acceptToTakeAPictureOfChillingGuestAtStage(ChillingGuest g) {
+		return g.nervous < 0.6 and laziness < 0.8;
 	}
 
 	bool shouldTakeAPhotoAtBar {
@@ -1146,6 +1266,10 @@ species Photographer parent: Guest {
 
 	bool shouldTakeAPhotoAtStage {
 		return creative > 0.2 and laziness < 0.7;
+	}
+	
+	bool shouldTakeAPhotoOfChillingGuestAtStage {
+		return creative > 0.4 and laziness < 0.8;
 	}
 
 	bool shouldHaveABeerAtBar {
