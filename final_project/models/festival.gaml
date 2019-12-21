@@ -727,8 +727,8 @@ species ChillingGuest parent: Guest {
 				
 				match Merchant.name {
 					if (p.contents[0] = "BAR" and p.contents[1] = currentBar) {
-						// TODO do handleMerchantProposalAtBar(p);
-					} else if (p.contents[0] = "STAGE" and p.contents[1] = currentStage and p.contents[2] = MERCHANT_MAKES_AN_OFFER) {
+						do handleMerchantProposalAtBar(p);
+					} else if (p.contents[0] = "STAGE" and p.contents[1] = currentStage) {
 						do handleMerchantProposalAtStage(p);
 					}
 				}
@@ -741,7 +741,7 @@ species ChillingGuest parent: Guest {
 			string senderType <- string(type_of(reject.sender));
 			switch(senderType) {
 				match ChillingGuest.name {
-					if (reject.contents[0] = "STAGE" and reject.contents[1] = currentStage and reject.contents[2] = DECLINE_PHOTO) {
+					if (reject.contents[0] = "STAGE" and reject.contents[1] = currentStage) {
 							write "Time[" + time + "]: " + name + "'s offer to listen together is rejected by " + reject.sender;
 							happiness <- happiness - 0.1;
 					}
@@ -753,7 +753,7 @@ species ChillingGuest parent: Guest {
 			string senderType <- string(type_of(accept.sender));
 			switch(senderType) {
 				match ChillingGuest.name {
-					if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage and accept.contents[2] = ACCEPT_PHOTO) {
+					if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage) {
 						write "Time[" + time + "]: " + name + "'s offer to listen together is accepted by " + accept.sender;
 						happiness <- happiness + 0.1;
 					}
@@ -956,6 +956,19 @@ species ChillingGuest parent: Guest {
 			happiness <- happiness - 0.1;
 		}
 	}
+	
+	action handleMerchantProposalAtBar(message p) {
+		write "Time[" + time + "]: " + name + " receives a proposal from merchant " + p.sender + " at bar " + currentBar.name;
+		if (acceptToBuyFromMerchantAtBar(p.sender as Merchant)) {
+			write "Time[" + time + "]: Accepting to buy from " + p.sender + " at bar " + currentBar.name;
+			do accept_proposal message: p contents: ["BAR", currentBar, BUY_MERCHANDISE, cycle] ;
+			happiness <- happiness + 0.1;
+		} else {
+			write "Time[" + time + "]: Declining to buy from " + p.sender + " at bar " + currentBar.name;
+			do reject_proposal message: p contents: ["BAR", currentBar, DO_NOT_BUY_MERCHANDISE, cycle] ;
+			happiness <- happiness - 0.1;
+		}
+	}
 
 	action askBarForBeer(int quantity) {
 		write name + " is asking for a beer at bar " + currentBar.name;
@@ -1013,6 +1026,10 @@ species ChillingGuest parent: Guest {
 	bool acceptToBuyFromMerchantAtStage(Merchant m) {
 		return positive > 0.6 and cautious < 0.6 
 			and m.convincing > 0.6 and m.promoting = true;
+	}
+	
+	bool acceptToBuyFromMerchantAtBar(Merchant m) {
+		return m.convincing > 0.6 and m.trustworthy > 0.6 and positive > 0.6;
 	}
 }
 
@@ -1407,8 +1424,7 @@ species Merchant parent: Guest {
 	}
 	
 	reflex isAtBarToStartInteractionsReflex when: isAtBar() and timeAtBar mod 5 = 0 {
-		// TODO
-//		do startInteractionsAtBar;
+		do startInteractionsAtBar;
 	}
 	
 	reflex isAtStageToStartInteractionsReflex when: isAtStage() and timeAtStage mod 5 = 0 {
@@ -1416,7 +1432,22 @@ species Merchant parent: Guest {
 	}
 	
 	action startInteractionsAtBar {
-	// TODO	
+		write name + " start interactions at bar " + time;
+		list<agent> agentsAtBar <- agents_overlapping(currentBar);
+		remove self from: agentsAtBar;
+		if(empty(agentsAtBar) or length(agentsAtBar) = 0) {
+			// TODO
+//			do aloneAtBar;
+		} else {
+			loop agentAtBar over: agentsAtBar {
+				string agentType <- string(type_of(agentAtBar));
+				switch(agentType) {
+					match ChillingGuest.name {
+						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
+					}
+				}
+			}
+		}
 	}
 	
 	action startInteractionsAtStage {
@@ -1537,18 +1568,30 @@ species Merchant parent: Guest {
 		}
 	}
 	
+	action meetChillingGuestAtBar(ChillingGuest g) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		if ((!(initiators contains g)) and shouldApproachChillingGuestToSellAtBar(g)) {
+			write "Time[" + time + "]: " + name + " asks " + g.name + " to if they want to buy something at bar " + currentBar.name;
+			do start_conversation to: [g] protocol: "fipa-propose" performative: "propose" 
+				contents: ["BAR", currentBar, MERCHANT_MAKES_AN_OFFER, cycle];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to sell merchandise to " + g.name;
+		}
+	}
 	/*
 	 * RULES
 	 */
+	bool shouldApproachDancingGuestToSell(DancingGuest d) {
+		return convincing > 0.6 and d.loudness < 0.8;
+	}
 	 
-	 bool shouldApproachDancingGuestToSell(DancingGuest d) {
-	 	return convincing > 0.6 and d.loudness < 0.8;
-	 }
-	 
-	 bool shouldApproachChillingGuestToSellAtStage(ChillingGuest g) {
-	 	return trustworthy > 0.6 and convincing > 0.6 and g.nervous < 0.4;
-	 }
+	bool shouldApproachChillingGuestToSellAtStage(ChillingGuest g) {
+		return trustworthy > 0.6 and convincing > 0.6 and g.nervous < 0.4;
+	}
 	
+	bool shouldApproachChillingGuestToSellAtBar(ChillingGuest g) {
+		return g.positive > 0.4 and g.nervous < 0.5 and trustworthy > 0.5;
+	}
 }
 
 species SecurityGuard skills: [moving, fipa] {
