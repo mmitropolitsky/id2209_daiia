@@ -12,6 +12,7 @@ model festival
 global {
 	string TAKE_PICTURE_OF_STAGE <- "Taking a picture of stage";
 	string SAY_HI_TO_COLLEAGUE <- "Hello, colleague photographer";
+	string SAY_HI_TO_MERCHANT <- "Hello, fellow merchant!";
 
 	string DRINK_OFFER <- "Let's drink";
 	string ACCEPT_DRINK <- "OK! Let's have one!";
@@ -1466,8 +1467,7 @@ species Merchant parent: Guest {
 		list<agent> agentsAtBar <- agents_overlapping(currentBar);
 		remove self from: agentsAtBar;
 		if(empty(agentsAtBar) or length(agentsAtBar) = 0) {
-			// TODO
-//			do aloneAtBar;
+			do aloneAtBar;
 		} else {
 			loop agentAtBar over: agentsAtBar {
 				string agentType <- string(type_of(agentAtBar));
@@ -1477,6 +1477,9 @@ species Merchant parent: Guest {
 					}
 					match ChillingGuest.name {
 						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
+					}
+					match Merchant.name {
+						do sayHiToColleagueAtBar(agentAtBar as Merchant);
 					}
 				}
 			}
@@ -1488,8 +1491,7 @@ species Merchant parent: Guest {
 		list<agent> agentsAtStage <- agents_overlapping(currentStage);
 		remove self from: agentsAtStage;
 		if(empty(agentsAtStage) or length(agentsAtStage) = 0) {
-			// TODO
-//			do aloneAtStage;
+			do aloneAtStage;
 		} else {
 			loop agentAtStage over: agentsAtStage {
 				string agentType <- string(type_of(agentAtStage));
@@ -1499,6 +1501,9 @@ species Merchant parent: Guest {
 					}
 					match ChillingGuest.name {
 						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
+					}
+					match Merchant.name {
+						do sayHiToColleagueAtStage(agentAtStage as Merchant);
 					}
 				}
 			}
@@ -1565,6 +1570,21 @@ species Merchant parent: Guest {
 				}
 			}
 		}
+		
+		loop inform over: informs {
+			string senderType <- string(type_of(inform.sender));
+			switch(senderType) {
+				match Photographer.name {
+					if (inform.contents[0] = "STAGE" and inform.contents[1] = currentStage and inform.contents[2] = SAY_HI_TO_MERCHANT) {
+						write "Time[" + time + "]: " + name + " says hi to " + inform.sender;
+						do end_conversation message: inform contents: ["STAGE", currentStage,"Hello."] ;
+					} else if (inform.contents[0] = "BAR" and inform.contents[1] = currentBar and inform.contents[2] = SAY_HI_TO_MERCHANT) {
+						write "Time[" + time + "]: " + name + " says hi to " + inform.sender;
+						do end_conversation message: inform contents: ["BAR", currentBar, "Nice to see you at the bar."] ;
+					}
+				}
+			}
+		}
 	}
 	
 	action meetDancingGuestAtBar(DancingGuest d) {
@@ -1624,7 +1644,7 @@ species Merchant parent: Guest {
 			write "Time[" + time + "]: " + name + " decides not to sell merchandise to " + g.name;
 		}
 	}
-	
+
 	action handlePhotographerAtBar(message cfp) {
 		if (cfp.contents[0] = "BAR" and cfp.contents[1] = currentBar and cfp.contents[2] = ASK_MERCHANT_FOR_OFFER) {
         	bool isWorking <- flip(MERCHANT_WORKING_AT_BAR);
@@ -1636,6 +1656,24 @@ species Merchant parent: Guest {
                 do refuse message: cfp contents: ["BAR", currentBar, MERCHANT_IS_NOT_WORKING];
             }
         }
+	}
+	
+	action sayHiToColleagueAtBar(Merchant m) {
+		write "Time[" + time + "]: " + name + " greets a colleague " + m.name + " at bar " + currentBar.name;
+		do start_conversation to: [m] protocol: "no-protocol" performative: "inform" contents: ["BAR", currentBar, SAY_HI_TO_MERCHANT];
+	}
+
+	action sayHiToColleagueAtStage(Merchant m) {
+		write "Time[" + time + "]: " + name + " greets a colleague " + m.name + " at stage " + currentStage.name;
+		do start_conversation to: [m] protocol: "no-protocol" performative: "inform" contents: ["STAGE", currentStage, SAY_HI_TO_MERCHANT];
+	}
+	
+	action aloneAtBar {
+		write "Time[" + time + "]: " + name + " chills at bar " + currentBar.name;
+	}
+	
+	action aloneAtStage {
+		write "Time[" + time + "]: " + name + " waiting for people at stage " + currentStage.name;
 	}
 	
 	/*
