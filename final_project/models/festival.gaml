@@ -710,9 +710,14 @@ species ChillingGuest parent: Guest {
 						do handleDancingGuestAtStage(p);
 					}
 				}
+				match ChillingGuest.name {
+					if (p.contents[0] = "STAGE" and p.contents[1] = currentStage) {
+						do handlePhotoProposalFromChillingGuestAtStage(p);
+					}
+				}
+				
 				// meet photographer at bar and he proposes to take a pic
 				match Photographer.name {
-					write "Here at handle interactions of the chilling guest after photo proposal";
 					if (p.contents[0] = "BAR" and p.contents[1] = currentBar) {
 						do handlePhotoProposalFromPhotographerAtBar(p);
 					} else if (p.contents[0] = "STAGE" and p.contents[1] = currentStage) {
@@ -720,11 +725,15 @@ species ChillingGuest parent: Guest {
 					}
 				}
 				
-				match ChillingGuest.name {
-					if (p.contents[0] = "STAGE" and p.contents[1] = currentStage) {
-						do handlePhotoProposalFromChillingGuestAtStage(p);
+				match Merchant.name {
+					if (p.contents[0] = "BAR" and p.contents[1] = currentBar) {
+						// TODO do handleMerchantProposalAtBar(p);
+					} else if (p.contents[0] = "STAGE" and p.contents[1] = currentStage and p.contents[2] = MERCHANT_MAKES_AN_OFFER) {
+						do handleMerchantProposalAtStage(p);
 					}
 				}
+				
+				
 			}
 		}
 		
@@ -934,6 +943,19 @@ species ChillingGuest parent: Guest {
 			happiness <- happiness - 0.1;
 		}
 	}
+	
+	action handleMerchantProposalAtStage(message p) {
+		write "Time[" + time + "]: " + name + " receives a proposal from merchant " + p.sender + " at stage " + currentStage.name;
+		if (acceptToBuyFromMerchantAtStage(p.sender as Merchant)) {
+			write "Time[" + time + "]: Accepting to buy from " + p.sender + " at stage " + currentStage.name;
+			do accept_proposal message: p contents: ["STAGE", currentStage, BUY_MERCHANDISE, cycle] ;
+			happiness <- happiness + 0.1;
+		} else {
+			write "Time[" + time + "]: Declining to buy from " + p.sender + " at stage " + currentStage.name;
+			do reject_proposal message: p contents: ["STAGE", currentStage, DO_NOT_BUY_MERCHANDISE, cycle] ;
+			happiness <- happiness - 0.1;
+		}
+	}
 
 	action askBarForBeer(int quantity) {
 		write name + " is asking for a beer at bar " + currentBar.name;
@@ -986,6 +1008,11 @@ species ChillingGuest parent: Guest {
 	
 	bool acceptToListenTogetherWithOtherChillingGuest {
 		return positive > 0.3;
+	}
+	
+	bool acceptToBuyFromMerchantAtStage(Merchant m) {
+		return positive > 0.6 and cautious < 0.6 
+			and m.convincing > 0.6 and m.promoting = true;
 	}
 }
 
@@ -1373,7 +1400,7 @@ species Merchant parent: Guest {
 	
 	float trustworthy <- rnd(0.0, 1.0) with_precision 2;
 	float convincing <- rnd(0.0, 1.0) with_precision 2;
-	float promoting <- rnd(0.0, 1.0) with_precision 2;
+	bool promoting <- flip(0.5);
 	
 	reflex isAtBarReflex when: isAtBar() {
 		do handleInteractions;
@@ -1407,7 +1434,7 @@ species Merchant parent: Guest {
 						do meetDancingGuestAtStage(agentAtStage as DancingGuest);
 					}
 					match ChillingGuest.name {
-//						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
+						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
 					}
 				}
 			}
@@ -1436,6 +1463,15 @@ species Merchant parent: Guest {
 						happiness <- happiness - 0.1;
 					}
 				}
+				match ChillingGuest.name {
+					if (reject.contents[0] = "BAR" and reject.contents[1] = currentBar and reject.contents[2] = DO_NOT_BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
+						happiness <- happiness - 0.1;
+					} else if (reject.contents[0] = "STAGE" and reject.contents[1] = currentStage and reject.contents[2] = DO_NOT_BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender + " at stage " + currentStage;
+						happiness <- happiness - 0.1;
+					}
+				}
 			}
 		}
 	
@@ -1443,6 +1479,15 @@ species Merchant parent: Guest {
 			string senderType <- string(type_of(accept.sender));
 			switch(senderType) {
 				match DancingGuest.name {
+					if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+						happiness <- happiness + 0.1;	
+					} else if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage and accept.contents[2] = BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender + " at stage " + currentStage;
+						happiness <- happiness + 0.1;
+					}
+				}
+				match ChillingGuest.name {
 					if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = BUY_MERCHANDISE) {
 						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
 						happiness <- happiness + 0.1;	
@@ -1480,12 +1525,28 @@ species Merchant parent: Guest {
         }
 	}
 	
+	action meetChillingGuestAtStage(ChillingGuest g) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
+		if ((!(initiators contains g)) and shouldApproachChillingGuestToSellAtStage(g)) {
+			write "Time[" + time + "]: " + name + " asks " + g.name + " to if they want to buy something at stage " + currentStage.name;
+			do start_conversation to: [g] protocol: "fipa-propose" performative: "propose" 
+				contents: ["STAGE", currentStage, MERCHANT_MAKES_AN_OFFER, cycle];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to sell merchandise " + g.name;
+		}
+	}
+	
 	/*
 	 * RULES
 	 */
 	 
 	 bool shouldApproachDancingGuestToSell(DancingGuest d) {
 	 	return convincing > 0.6 and d.loudness < 0.8;
+	 }
+	 
+	 bool shouldApproachChillingGuestToSellAtStage(ChillingGuest g) {
+	 	return trustworthy > 0.6 and convincing > 0.6 and g.nervous < 0.4;
 	 }
 	
 }
