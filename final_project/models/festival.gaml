@@ -1442,6 +1442,9 @@ species Merchant parent: Guest {
 			loop agentAtBar over: agentsAtBar {
 				string agentType <- string(type_of(agentAtBar));
 				switch(agentType) {
+					match DancingGuest.name {
+						do meetDancingGuestAtBar(agentAtBar as DancingGuest);
+					}
 					match ChillingGuest.name {
 						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
 					}
@@ -1531,9 +1534,19 @@ species Merchant parent: Guest {
 		}
 	}
 	
+	action meetDancingGuestAtBar(DancingGuest d) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		if ((!(initiators contains d)) and shouldAppraochDancingGuestToSellAtBar(d)) {
+			write "Time[" + time + "]: " + name + " asks " + d.name + " to if they want to buy something at bar " + currentBar.name;
+			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
+				contents: ["BAR", currentBar, MERCHANT_MAKES_AN_OFFER, cycle];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to sell merchandise " + d.name;
+		}
+	}
+	
 	action meetDancingGuestAtStage(DancingGuest d) {
 		list<agent> initiators <- conversations collect (each.initiator);
-		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
 		if ((!(initiators contains d)) and shouldApproachDancingGuestToSell(d)) {
 			write "Time[" + time + "]: " + name + " asks " + d.name + " to if they want to buy something at stage " + currentStage.name;
 			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
@@ -1583,6 +1596,10 @@ species Merchant parent: Guest {
 	 */
 	bool shouldApproachDancingGuestToSell(DancingGuest d) {
 		return convincing > 0.6 and d.loudness < 0.8;
+	}
+	
+	bool shouldAppraochDancingGuestToSellAtBar(DancingGuest d) {
+		return d.drunkness < 0.7 and d.loudness < 0.7 and convincing > 0.6;
 	}
 	 
 	bool shouldApproachChillingGuestToSellAtStage(ChillingGuest g) {
