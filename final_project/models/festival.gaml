@@ -22,10 +22,12 @@ global {
 	string SECURITY_GUARD_HEADING_TO_YOU <- "I will catch you!";
 	string SECURITY_GUARD_CAUGHT_YOU <- "Go to prison.";
 	
+
 	string ASK_MERCHANT_FOR_OFFER <- "I would like to buy something.";
 	string MERCHANT_MAKES_AN_OFFER <- "You can buy merchandise now.";
 	string MERCHANT_IS_NOT_WORKING <- "Sorry, I am not working.";
 	string BUY_MERCHANDISE <- "I will buy this.";
+	string DO_NOT_BUY_MERCHANDISE <- "I will not buy this, sorry.";
 	string MERCHANT_NOT_TRUSTWORTHY <- "You are not trustworthy.";
 	float MERCHANT_WORKING_AT_BAR <- 0.2;
 
@@ -335,6 +337,17 @@ species DancingGuest parent: Guest {
 							write "Time[" + time + "]: " + name + " is not buying from " + propose.sender;
 							do reject_proposal message: propose contents: ["BAR", currentBar, MERCHANT_NOT_TRUSTWORTHY];
 						}
+					} else if (propose.contents[0] = "STAGE" and propose.contents[1] = currentStage) {
+						write "Time[" + time + "]: " + name + " receives a proposal from merchant " 
+							+ propose.sender + " at stage " + currentStage.name;
+						if (propose.contents[2] =  MERCHANT_MAKES_AN_OFFER and shouldBuyFromMerchantAtStage(Merchant(propose.sender))) {
+							write "Time[" + time + "]: " + name + " is buying from " + propose.sender + " at stage " + currentStage;
+							do accept_proposal message: propose contents: ["STAGE", currentStage, BUY_MERCHANDISE];
+							happiness <- happiness + 0.1;
+						} else {
+							write "Time[" + time + "]: " + name + " is not buying from " + propose.sender + " at stage " + currentStage;
+							do reject_proposal message: propose contents: ["STAGE", currentStage, DO_NOT_BUY_MERCHANDISE];
+						}
 					}
 				}
 				// after being approached by the photographer for a picture, accept it or decline it
@@ -591,6 +604,10 @@ species DancingGuest parent: Guest {
 		return m.trustworthy > 0.3;
 	}
 
+	bool shouldBuyFromMerchantAtStage(Merchant m) {
+		return generous > 0.6;
+	}
+	
 	bool shouldAcceptPicture {
 		return confident >= 0.5;
 	}
@@ -1359,10 +1376,45 @@ species Merchant parent: Guest {
 	float promoting <- rnd(0.0, 1.0) with_precision 2;
 	
 	reflex isAtBarReflex when: isAtBar() {
-		do handleInteractionsAtBar;
+		do handleInteractions;
 	}
 	
-	action handleInteractionsAtBar {
+	reflex isAtBarToStartInteractionsReflex when: isAtBar() and timeAtBar mod 5 = 0 {
+		// TODO
+//		do startInteractionsAtBar;
+	}
+	
+	reflex isAtStageToStartInteractionsReflex when: isAtStage() and timeAtStage mod 5 = 0 {
+		do startInteractionsAtStage;
+	}
+	
+	action startInteractionsAtBar {
+	// TODO	
+	}
+	
+	action startInteractionsAtStage {
+		write name + "start interactions at stage " + time;
+		list<agent> agentsAtStage <- agents_overlapping(currentStage);
+		remove self from: agentsAtStage;
+		if(empty(agentsAtStage) or length(agentsAtStage) = 0) {
+			// TODO
+//			do aloneAtStage;
+		} else {
+			loop agentAtStage over: agentsAtStage {
+				string agentType <- string(type_of(agentAtStage));
+				switch(agentType) {
+					match DancingGuest.name {
+						do meetDancingGuestAtStage(agentAtStage as DancingGuest);
+					}
+					match ChillingGuest.name {
+//						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
+					}
+				}
+			}
+		}
+	}
+	
+	action handleInteractions {
 		loop cfp over: cfps {
 			string senderType <- string(type_of(cfp.sender));
 	        switch(senderType) {
@@ -1377,8 +1429,11 @@ species Merchant parent: Guest {
 			switch(senderType) {
 				match DancingGuest.name {
 					if (reject.contents[0] = "BAR" and reject.contents[1] = currentBar and reject.contents[2] = MERCHANT_NOT_TRUSTWORTHY) {
-							write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
-							happiness <- happiness - 0.1;
+						write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender;
+						happiness <- happiness - 0.1;
+					} else if (reject.contents[0] = "STAGE" and reject.contents[1] = currentStage and reject.contents[2] = DO_NOT_BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is rejected by " + reject.sender + " at stage " + currentStage;
+						happiness <- happiness - 0.1;
 					}
 				}
 			}
@@ -1386,15 +1441,30 @@ species Merchant parent: Guest {
 	
 		loop accept over: accept_proposals {
 			string senderType <- string(type_of(accept.sender));
-				switch(senderType) {
-					match DancingGuest.name {
-						if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = BUY_MERCHANDISE) {
-							write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
-							happiness <- happiness + 0.1;	
-						}
+			switch(senderType) {
+				match DancingGuest.name {
+					if (accept.contents[0] = "BAR" and accept.contents[1] = currentBar and accept.contents[2] = BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender;
+						happiness <- happiness + 0.1;	
+					} else if (accept.contents[0] = "STAGE" and accept.contents[1] = currentStage and accept.contents[2] = BUY_MERCHANDISE) {
+						write "Time[" + time + "]: " + name + "'s offer is accepted by " + accept.sender + " at stage " + currentStage;
+						happiness <- happiness + 0.1;
+					}
 				}
 			}
 		}
+	}
+	
+	action meetDancingGuestAtStage(DancingGuest d) {
+		list<agent> initiators <- conversations collect (each.initiator);
+		write "Time[" + time + "]: " + " initiator of conv. with photographer " + initiators;
+		if ((!(initiators contains d)) and shouldApproachDancingGuestToSell(d)) {
+			write "Time[" + time + "]: " + name + " asks " + d.name + " to if they want to buy something at stage " + currentStage.name;
+			do start_conversation to: [d] protocol: "fipa-propose" performative: "propose" 
+				contents: ["STAGE", currentStage, MERCHANT_MAKES_AN_OFFER, cycle];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to sell merchandise " + d.name;
+		}	
 	}
 	
 	action handleDancingGuestAtBar(message cfp) {
@@ -1409,6 +1479,15 @@ species Merchant parent: Guest {
             }
         }
 	}
+	
+	/*
+	 * RULES
+	 */
+	 
+	 bool shouldApproachDancingGuestToSell(DancingGuest d) {
+	 	return convincing > 0.6 and d.loudness < 0.8;
+	 }
+	
 }
 
 species SecurityGuard skills: [moving, fipa] {
