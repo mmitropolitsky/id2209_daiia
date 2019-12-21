@@ -1079,6 +1079,9 @@ species Photographer parent: Guest {
 					match Photographer.name {
 						do meetPhotographerAtBar(agentAtBar as Photographer);
 					}
+					match Merchant.name {
+						do meetMerchantAtBar(agentAtBar as Merchant);
+					}
 				}
 			}
 		}
@@ -1169,6 +1172,17 @@ species Photographer parent: Guest {
 
 	action meetPhotographerAtStage(Photographer p) {
 		do sayHiToColleagueAtStage(p);
+	}
+
+	// MEET MERCHANT
+	
+	action meetMerchantAtBar(Merchant m) {
+		if (shouldTryToBuyFromMerchantAtABar()) {
+			write "Time[" + time + "]: " + name + " approaches merchant " + m;
+			do start_conversation to: [m] protocol: 'fipa-contract-net' performative: 'cfp' contents: ["BAR", currentBar, ASK_MERCHANT_FOR_OFFER];
+		} else {
+			write "Time[" + time + "]: " + name + " decides not to approach merchant " + m;
+		}
 	}
 
 	action handleInteractions {
@@ -1284,6 +1298,12 @@ species Photographer parent: Guest {
 		loop refuse over: refuses {
 			string senderType <- string(type_of(refuse.sender));
 			switch(senderType) {
+				match Merchant.name {
+					if (refuse.contents[0] = "BAR" and refuse.contents[1] = currentBar) {
+						write "Time[" + time + "]: " + name + " receives a refuse from merchant " + refuse.sender;
+						happiness <- happiness - 0.05;
+					}
+				}
 				match Bar.name {
 					// Bar has no more beer
 					happiness <- happiness - 0.1 * (refuse.contents[1] as int);
@@ -1295,7 +1315,6 @@ species Photographer parent: Guest {
 			string senderType <- string(type_of(propose.sender));
 			switch(senderType) {
 				match Photographer.name {
-					write name + " type of sender is Ph";
 					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar and propose.contents[2] = DRINK_OFFER) {
 						if (shouldHaveABeerAtBar()) {
 							write "Time[" + time + "]: " + name + " accepting proposal to drink at " + currentBar.name;
@@ -1305,6 +1324,13 @@ species Photographer parent: Guest {
 							do reject_proposal message: propose contents: ["BAR", currentBar, DECLINE_DRINK];
 						}
 					}
+				}
+				match Merchant.name {
+					if (propose.contents[0] = "BAR" and propose.contents[1] = currentBar and propose.contents[2] = MERCHANT_MAKES_AN_OFFER) {
+						write "Time[" + time + "]: " + name + " accepting merchant's offer for purchase " + currentBar.name;
+						happiness <- happiness + 0.1;
+						do accept_proposal message: propose contents: ["BAR", currentBar, BUY_MERCHANDISE];
+					}		
 				}
 			}
 		}
@@ -1408,6 +1434,10 @@ species Photographer parent: Guest {
 	bool shouldHaveABeerAtBar {
 		return !isWorking;
 	}
+	
+	bool shouldTryToBuyFromMerchantAtABar {
+		return !isWorking and creative > 0.5 and laziness < 0.4;
+	}
 }
 
 species Merchant parent: Guest {
@@ -1481,6 +1511,9 @@ species Merchant parent: Guest {
 	        switch(senderType) {
 				match DancingGuest.name {
 	            	do handleDancingGuestAtBar(cfp);
+	            }
+	            match Photographer.name {
+	            	do handlePhotographerAtBar(cfp);
 	            }
 	       	}
 	    }
@@ -1591,6 +1624,20 @@ species Merchant parent: Guest {
 			write "Time[" + time + "]: " + name + " decides not to sell merchandise to " + g.name;
 		}
 	}
+	
+	action handlePhotographerAtBar(message cfp) {
+		if (cfp.contents[0] = "BAR" and cfp.contents[1] = currentBar and cfp.contents[2] = ASK_MERCHANT_FOR_OFFER) {
+        	bool isWorking <- flip(MERCHANT_WORKING_AT_BAR);
+            if (isWorking) {
+            	write "Time[" + time + "]: " + name + " makes a proposal " + cfp.sender;
+                do propose message: cfp contents: ["BAR", currentBar, MERCHANT_MAKES_AN_OFFER];
+            } else {
+            	write "Time[" + time + "]: " + name + " refuses offer from " + cfp.sender;
+                do refuse message: cfp contents: ["BAR", currentBar, MERCHANT_IS_NOT_WORKING];
+            }
+        }
+	}
+	
 	/*
 	 * RULES
 	 */
