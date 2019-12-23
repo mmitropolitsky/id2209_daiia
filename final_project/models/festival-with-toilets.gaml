@@ -37,6 +37,14 @@ global {
 	string ACCEPT_PHOTO <- "Sure, go ahead!";
 	string DECLINE_PHOTO <- "No, I am not in the mood.";
 
+	int TOILET_URGENCY <- 60;
+	int TOILET_URGENCY_THRESHOLD <- 40;
+	int TIME_PER_GUEST_IN_TOILET <- 15;
+	string TOILET_IS_FREE <- "Now is your turn.";
+	string TOILET_IS_TAKEN <- "There is somebody before you";
+	string GET_OUT_OF_TOILET <- "Your turn in the toilet has ended.";
+	string QUEUE_MOVING_FORWARD <- "The queue is moving, you can move.";
+
 	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest) + length(Photographer)};
     int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
     						+ ChillingGuest count (each.happiness > 0.8)
@@ -83,6 +91,10 @@ species Guest skills: [moving, fipa] {
 	float drunkness <- 0.0 with_precision 2;
 	float loudness <- rnd(0.5, 1.0) with_precision 2;
 	bool prefersCompany <- flip(0.5);
+	bool hasRequestedToUseToilet <- false;
+	bool canEnterToilet <- false;
+	
+	int toiletUrgency <- TOILET_URGENCY update: cycle mod 20 = 0 ? toiletUrgency - 1 : toiletUrgency;
 	
 	int size <- 1;
 	
@@ -93,6 +105,9 @@ species Guest skills: [moving, fipa] {
 	Stage currentStage <- nil;
 	Bar currentBar <- nil;
 	point randomPoint <- nil;
+	Toilet currentToilet <- nil;
+
+	point target <- nil;
 	
 	int TIME_AT_BAR <- 100;
 	int TIME_AT_STAGE <- 100;
@@ -111,9 +126,12 @@ species Guest skills: [moving, fipa] {
 		draw my_icon size: 2 * size;
 	}
 	
-	reflex defaultBehaviour when: currentStage = nil and currentBar = nil {
+	reflex defaultBehaviour when: currentStage = nil and currentBar = nil and currentToilet = nil {
 		do wander;
-		if (randomPoint != nil) {
+		if (toiletUrgency < TOILET_URGENCY_THRESHOLD) {
+			currentToilet <- one_of(Toilet);
+			target <- currentToilet.toiletEntrance;
+		} else if (randomPoint != nil) {
 			do goto target: randomPoint;
 			if (self.location = randomPoint) {
 				randomPoint <- nil;
@@ -141,7 +159,7 @@ species Guest skills: [moving, fipa] {
 	action endTimeAtBar {
 		timeAtBar <- TIME_AT_BAR;
 		currentBar <- nil;
-		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
+		randomPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
 	}
 	
 	bool isAtBar {
@@ -177,6 +195,35 @@ species Guest skills: [moving, fipa] {
 		return agentsInPrison contains self;
 	}
 	
+	// Toilet related
+	reflex goToToiletEntrance when: currentToilet != nil and !isAtToiletEntrance() {
+//		do goto target: currentToilet.toiletEntrance;
+//		target <- currentToilet.toiletEntrance;
+	}
+	
+	reflex enterToilet when: canEnterToilet {
+//		do goto target: currentToilet;
+	}
+	
+	reflex isAtToiletEntrance when: isAtToiletEntrance() and !hasRequestedToUseToilet {
+		do start_conversation to:[currentToilet] protocol: "fipa-request" performative: "request" contents:["I need to go to the bathroom, NOW!!!"];
+		hasRequestedToUseToilet <- true;
+	}
+	
+	action endTimeInToilet {
+		toiletUrgency <- TOILET_URGENCY;
+		hasRequestedToUseToilet <- false;
+		canEnterToilet <- false;
+		currentToilet <- nil;
+		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
+		target <- nil;
+	}
+	
+	bool isAtToiletEntrance {
+		return currentToilet != nil and location = currentToilet.toiletEntrance;
+	}
+	
+	
 	bool isBad {
 		return drunkness > 0.8 and loudness > 0.8;
 	}
@@ -186,19 +233,93 @@ species Guest skills: [moving, fipa] {
 		drunkness <- drunkness + 0.1;
 	}
 	
-	// after a friend orders a beer for me, the bar sends an inform message whether there is more beer left or not
-	action handleBeerOrderedByFriend {
+	action handleBeerSentFromFriend {
 		// if I am a friend of the other dancing guy
 		loop i over: informs {
 			string msg <- i.contents[0] as string;
+			// after a friend orders a beer for me, the bar sends an inform message whether there is more beer left or not
 			if (msg = BEER_IN_STOCK) {
 				write name + " drinks";
 				do drinkBeer(i.contents[1] as int);
+				do end_conversation message: i contents: ["Alright."];
 			} else if (msg = NO_MORE_BEER) {
 				happiness <- happiness - 0.1 * (i.contents[1] as int);
+				do end_conversation message: i contents: ["Alright."];
 			}
-			do end_conversation message: i contents: ["Alright."];
 		}
+	}
+	
+	reflex handleToiletInteractions {
+		loop i over: informs {
+			string senderType <- string(type_of(i.sender));
+			switch(senderType) {
+				match Toilet.name {
+					string msg <- i.contents[0] as string;
+		 			if (msg = GET_OUT_OF_TOILET) {
+						do endTimeInToilet;
+						do end_conversation message: i contents: ["Alright."];
+					} else if (msg = QUEUE_MOVING_FORWARD) {
+						write "Time[" + time + "]: " + name + " moves forward to enter toilet.";
+						
+						// has reached the place it was supposed to take in the queue
+						if (location = target) {
+							float newLocationX <- location.x + 6.0;
+							if (newLocationX >= Toilet(i.sender).toiletEntrance.x) {
+								newLocationX <- Toilet(i.sender).toiletEntrance.x;
+							}
+							target <- {newLocationX, location.y};
+						}
+					}
+				}
+			}
+		}
+		
+		loop agree over: agrees {
+			write "Time[" + time + "]: " + name + " receives agrees.";
+			string senderType <- string(type_of(agree.sender));
+			switch(senderType) {
+				match Toilet.name {
+					write "test";
+					string msg <- agree.contents[0] as string;
+		 			if (msg = TOILET_IS_FREE) {
+		 				write "Time[" + time + "]: " + name + " can enter toilet.";
+		 				happiness <- happiness + 1.0;
+		 				canEnterToilet <- true;
+		 				target <- currentToilet.location;
+					}
+				}
+			}
+		}
+		
+		loop refuse over: refuses {
+			string senderType <- string(type_of(refuse.sender));
+			switch(senderType) {
+				match Toilet.name {
+					string msg <- refuse.contents[0] as string;
+		 			if (msg = TOILET_IS_TAKEN) {
+		 				happiness <- happiness - 1.0;
+		 				int queueSize <- length(currentToilet.queue);
+		 				float xPoint <- 0.0;
+		 				if (queueSize <= 1) {
+		 					xPoint <- currentToilet.location.x;
+		 				} else {
+		 					int lastIndex <- length(currentToilet.queue) - 2;
+		 					Guest lastGuestOnQueue <- currentToilet.queue[lastIndex];
+		 					write "Guest " + lastGuestOnQueue.name + " on location " + lastGuestOnQueue.location;
+		 					write "Guest " + lastGuestOnQueue.name + " target " + lastGuestOnQueue.target;
+		 					xPoint <- lastGuestOnQueue.target.x;
+		 				}
+		 				
+		 				target <- {(xPoint - 4.0) with_precision 2, currentToilet.location.y};
+		 				write name + " enter queue at location " + target;
+					}
+				}
+			}
+		}	
+	}
+	
+	reflex moveToTarget when: target != nil {
+		do goto target: target;
 	}
 }
 
@@ -381,7 +502,7 @@ species DancingGuest parent: Guest {
 			}
 		}
 		
-		do handleBeerOrderedByFriend;
+		do handleBeerSentFromFriend;
 	}
 
 	action startInteractionsAtBar {
@@ -825,7 +946,7 @@ species ChillingGuest parent: Guest {
 			
 		}
 		
-		do handleBeerOrderedByFriend;
+		do handleBeerSentFromFriend;
 	}
 	
 	/*
@@ -1840,36 +1961,90 @@ species Prison {
 	}
 }
 
-species Toilet {
+species Toilet skills: [fipa] {
 	rgb myColor <- #gold;
 	image_file my_icon <- image_file("../includes/data/toilet.jpg");
-	
+
+	point toiletEntrance;
+	init {
+		location <- {rnd(30.0, 80.0), rnd(30.0, 80.0)};
+		toiletEntrance <- {(self.location.x - 4) with_precision 2, self.location.y};
+	}
+
 	list<Guest> queue <- [];
+	Guest guestInside <- nil;
+	int timePerGuestInToilet <- TIME_PER_GUEST_IN_TOILET;
 	
+	reflex reply_requests_to_use_toilet when: (!empty(requests)) {
+		loop r over: requests {
+			if (guestInside = nil) {
+				do agree message: (r) contents: [TOILET_IS_FREE];
+				guestInside <- r.sender;
+				write "Time[" + time + "]: Toilet is free for guest " + guestInside;
+			} else {
+				do refuse message: (r) contents: [TOILET_IS_TAKEN];
+				write "Time[" + time + "]: Toilet is taken for guest " + r.sender;
+				add r.sender to: queue;
+				write "Current queue state: " + queue;
+			}
+			string msg <- r.contents[0];
+		}
+	}
+
+	reflex updateToiletState when: guestInside != nil {
+		timePerGuestInToilet <- timePerGuestInToilet - 1;
+		if (timePerGuestInToilet = 0) {
+			write "Time[" + time + "]: Current queue state is: " + queue;
+			do start_conversation to: [guestInside] protocol: "no-protocol" performative: "inform" contents:[GET_OUT_OF_TOILET];
+			if (!empty(queue) and length(queue) >= 1) {
+				guestInside <- queue[0];
+				write "Time[" + time + "]: New guest inside: " + guestInside;
+				guestInside.target <- location;
+				do moveQueueForward;
+			} else {
+				guestInside <- nil;
+				queue <- [];
+			}
+			timePerGuestInToilet <- TIME_PER_GUEST_IN_TOILET;
+		}
+	}
+	
+	action moveQueueForward {
+		loop i from: 0 to: length(queue) - 1 {
+			if (i < length(queue) - 1) {
+				queue[i] <- queue[i + 1];
+				write "Sending message to " + queue[i].name + " to move forward on the queue";
+				do start_conversation to: [queue[i]] protocol: "no-protocol" performative: "inform" contents:[QUEUE_MOVING_FORWARD];
+			}
+		}
+		int lastIndexOfQueue <- length(queue) - 1;
+		remove queue[lastIndexOfQueue] from: queue;
+	}
+
 	aspect info {
-		draw pyramid(5) at: location color: myColor;
+		draw square(5) at: location color: myColor;
 	}
 	
 	aspect icon {
-		draw my_icon size: 5 + 2 * length(queue);
+		draw my_icon size: 5;
 	}
 }
 
 experiment fest_experiment type: gui {
 //	parameter "Initial number of bars: " var: barsNum category: "Fun places at the festival" ;
 	output {
-		display main_display {
-            species Guest aspect: icon;
-			species DancingGuest aspect: icon;
-			species ChillingGuest aspect: icon;
-			species Bar aspect: icon;
-			species Stage aspect: icon;
-			species Photographer aspect: icon;
-			species Prison aspect: icon;
-			species SecurityGuard aspect: icon;
-			species Merchant aspect: icon;
-			species Toilet aspect: icon;
-        }
+//		display main_display {
+//            species Guest aspect: icon;
+//			species DancingGuest aspect: icon;
+//			species ChillingGuest aspect: icon;
+//			species Bar aspect: icon;
+//			species Stage aspect: icon;
+//			species Photographer aspect: icon;
+//			species Prison aspect: icon;
+//			species SecurityGuard aspect: icon;
+//			species Merchant aspect: icon;
+//			species Toilet aspect: icon;
+//        }
 
         display info_display {
             species Guest aspect: info;
