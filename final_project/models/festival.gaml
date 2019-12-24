@@ -88,6 +88,7 @@ species Guest skills: [moving, fipa] {
 	float goToStage <- 0.2 with_precision 2;
 //	bool goToPrison <- false;
 	Prison prison <- nil;
+	int resisting <- 0;
 	
 	Stage currentStage <- nil;
 	Bar currentBar <- nil;
@@ -216,8 +217,10 @@ species Guest skills: [moving, fipa] {
 	
 	// Prison related
 	reflex isAtPrison when: isAtPrison() {
-		happiness <- happiness - 0.5;
-		drunkness <- drunkness - 0.5;
+		timeAtBar <- TIME_AT_BAR;
+		timeAtStage <- TIME_AT_STAGE;
+		happiness <- happiness - 0.2;
+		drunkness <- drunkness - 0.2;
 		if (timeAtPrison = 0) {
 			do endTimeAtPrison();
 		}
@@ -247,14 +250,12 @@ species Guest skills: [moving, fipa] {
 	}
 	
 	bool isBadInTheEyesOfThePolice {
-		write "SDFG: " + (((drunkness > 0.8 and loudness > 0.8) or isFollowingGuest = true));
 		return ((drunkness > 0.8 and loudness > 0.8) or isFollowingGuest = true);
 	}
 	
 	action goToPrison(Prison prisn) {
 		self.prison <- prisn;
 		isBeingHeld <- true;
-		write "" + prisn + "here, prison is: " + self.prison;
 	}
 	
 	action drinkBeer(int quantity) {
@@ -276,6 +277,8 @@ species Guest skills: [moving, fipa] {
 			do end_conversation message: i contents: ["Alright."];
 		}
 	}
+
+	action reactToThePolice;
 }
 
 species DancingGuest parent: Guest {
@@ -648,12 +651,32 @@ species DancingGuest parent: Guest {
 		do start_conversation to: [currentBar] protocol: 'fipa-request' performative: 'request' contents: ["I would like beer.", quantity];
 	}
 	
+	action reactToThePolice {
+		if (isAtBar() and shouldResistAtBar()) {
+			write "[Time " + time + "] " + name + " is resisting arrest at bar " + currentBar.name;
+			resisting <- 1;	
+		} else if(isAtStage() and shouldResistAtStage()) {
+			write "[Time " + time + "] " + name + " is resisting arrest at stage " + currentStage.name;
+			resisting <- 1;	 
+		} else {
+			write "[Time " + time + "] " + name + " is going peacefully with the seucurity guard...";
+			resisting <- 0;
+		}
+	}
+
 	/*
 	 * RULES
 	 */
 	 
+	bool shouldResistAtBar {
+		return confident > 0.8 and adventurous > 0.6;
+	}
+	
+	bool shouldResistAtStage {
+		return confident > 0.6 and adventurous > 0.8;
+	}
+	
 	bool shouldFollowChillingGuest {
-		write "HERE! at should follow";
 		// Here loudness is equivalent to annoying
 		return confident > 0.9 and loudness > 0.8;
 	}
@@ -1046,9 +1069,30 @@ species ChillingGuest parent: Guest {
 	}
 
 
+	action reactToThePolice {
+		if (isAtBar() and shouldResistAtBar()) {
+			write "[Time " + time + "] " + name + " is resisting arrest at bar " + currentBar.name;
+			resisting <- 1;	
+		} else if(isAtStage() and shouldResistAtStage()) {
+			write "[Time " + time + "] " + name + " is resisting arrest at stage " + currentStage.name;
+			resisting <- 1;	 
+		} else {
+			write "[Time " + time + "] " + name + " is going peacefully with the seucurity guard...";
+			resisting <- 0;
+		}
+	}
+
 	/*
 	 * RULES
 	 */
+	 
+	bool shouldResistAtBar {
+		return nervous > 0.9 and positive < 0.2 and cautious < 0.2;
+	}
+	
+	bool shouldResistAtStage {
+		return nervous > 0.6 and positive < 0.4 and cautious < 0.3;
+	}
 	 
 	bool shouldDanceWithDancingGuestAtStage(DancingGuest dg) {
 		return dg.loudness < 0.5 or nervous < 0.6;
@@ -1477,9 +1521,38 @@ species Photographer parent: Guest {
 		}
 	}
 
+	action reactToThePolice {
+		write "HERE";
+		if (isAtBar() and shouldResistAtBar()) {
+			write "[Time " + time + "] " + name + " is resisting arrest at bar " + currentBar.name;
+			resisting <- 1;	
+		} else if(isAtStage() and shouldResistAtStage()) {
+			write "[Time " + time + "] " + name + " is resisting arrest at stage " + currentStage.name;
+			resisting <- 1;	 
+		} else if ((isAtBar() or isAtStage()) and canDecrease()){
+			write "[Time " + time + "] " + name + " is going peacefully with the seucurity guard... However, they are working...";
+			resisting <- -1;
+		} else {
+			write "[Time " + time + "] " + name + " is going peacefully with the seucurity guard...";
+			resisting <- 0;
+		}
+	}
+
 	/*
 	 * RULES
 	 */
+	 
+	bool shouldResistAtBar {
+		return !isWorking and creative < 0.3;
+	}
+	
+	bool shouldResistAtStage {
+		return !isWorking and creative < 0.5 and laziness < 0.6;
+	}
+	
+	bool canDecrease {
+		return (isWorking and creative > 0.8) and laziness < 0.5;
+	}
 
 	bool acceptToTakeAPicture {
 		return flip(0.7);
@@ -1745,9 +1818,38 @@ species Merchant parent: Guest {
 		write "Time[" + time + "]: " + name + " waiting for people at stage " + currentStage.name;
 	}
 	
+	action reactToThePolice{
+		bool isWorking <- flip(MERCHANT_WORKING_AT_BAR);
+		if (isAtBar() and shouldResistAtBar(isWorking)) {
+			write "[Time " + time + "] " + name + " is resisting arrest at bar " + currentBar.name;
+			resisting <- 1;	
+		} else if(isAtStage() and shouldResistAtStage(isWorking)) {
+			write "[Time " + time + "] " + name + " is resisting arrest at stage " + currentStage.name;
+			resisting <- 1;	 
+		} else if ((isAtBar() or isAtStage()) and canDecrease(isWorking)){
+			write "[Time " + time + "] " + name + " is going peacefully with the seucurity guard... However, they are working...";
+			resisting <- -1;
+		} else {
+			write "[Time " + time + "] " + name + " is going peacefully with the seucurity guard...";
+			resisting <- 0;
+		}
+	}
+
 	/*
 	 * RULES
 	 */
+	 
+	bool shouldResistAtBar(bool isWorking) {
+		return !isWorking and convincing > 0.6 and trustworthy > 0.7;
+	}
+	
+	bool shouldResistAtStage(bool isWorking) {
+		return !isWorking and convincing < 0.8 and trustworthy > 0.6;
+	}
+	
+	bool canDecrease(bool isWorking) {
+		return (isWorking and convincing > 0.5) and trustworthy < 0.5;
+	}
 	bool shouldApproachDancingGuestToSell(DancingGuest d) {
 		return convincing > 0.6 and d.loudness < 0.8;
 	}
@@ -1768,7 +1870,7 @@ species Merchant parent: Guest {
 species SecurityGuard skills: [moving, fipa] {
 	image_file my_icon <- image_file("../includes/data/security-guard.png");
 	
-	int VIEW_DISTANCE <- 200;
+	
 	
 	init {
 		speed <- 10.0 #km/#h;
@@ -1779,12 +1881,66 @@ species SecurityGuard skills: [moving, fipa] {
 	Prison targetPrison <- nil;
 	point targetPoint <- nil;
 	
-	reflex wait when: targetPoint = nil {
-		do wander;
+	Stage currentStage <- nil;
+	Bar currentBar <- nil;
+	
+	bool goesToEvents <- flip(0.5);
+	int severity <- rnd(0,10);
+	int VIEW_DISTANCE <- rnd(10,30);
+	
+	
+	int TIME_AT_EVENT <- 100;
+	
+	int timeAtBar <- TIME_AT_EVENT update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
+	int timeAtStage <- TIME_AT_EVENT update: isAtStage() ? timeAtStage - 1 : timeAtStage min: 0;
+	
+	reflex wait when: targetPoint = nil and currentStage = nil and currentBar = nil {
 		Guest guest <- self.findBadGuest();
 		if (guest != nil) {
 			write self.name + ": entering capture bad guest action: " + guest.name;
 			do captureBadGuest(guest);
+		} else if (flip(0.2) and goesToEvents) {
+			currentStage <- one_of(Stage);
+			if (currentStage != nil) {
+				targetPoint <- currentStage.location;	
+			}
+		} else if (flip(0.2) and goesToEvents) {
+			currentBar <- one_of(Bar);
+			if (currentBar != nil) {
+				targetPoint <- currentBar.location;	
+			}
+		} else {
+			do wander;
+		}
+	}
+	
+	reflex atBar when: currentBar != nil {
+//		write "[Time: " + time + "] " + self.name + " is patroling at bar " + currentBar.name;
+		Guest guest <- self.findBadGuest();
+		if (guest != nil) {
+			write "[Time: " + time + "] " + self.name + " is capturing " + guest.name + " at bar " + currentBar.name;
+			do captureBadGuest(guest);
+		}
+		
+		if (timeAtBar = 0) {
+			targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
+			currentBar <- nil;
+			timeAtBar <- TIME_AT_EVENT;
+		}
+	}
+	
+	reflex atStage when: currentStage != nil {
+//		write "[Time: " + time + "] " + self.name + " is patroling at stage " + currentStage.name;
+		Guest guest <- self.findBadGuest();
+		if (guest != nil) {
+			write "[Time: " + time + "] " + self.name + " is capturing " + guest.name + " at stage " + currentStage.name;
+			do captureBadGuest(guest);
+		}
+		
+		if (timeAtStage = 0) {
+			targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
+			currentStage <- nil;
+			timeAtStage <- TIME_AT_EVENT;
 		}
 	}
 	
@@ -1804,9 +1960,18 @@ species SecurityGuard skills: [moving, fipa] {
 		if (capturedGuest.isBadInTheEyesOfThePolice() and self distance_to(capturedGuest) < 3) {
 			ask capturedGuest {
 				// escort to prison
+				do reactToThePolice;
+				if (resisting > 0) {
+					write "[Time" + time + "] Increasing time at prison for " + name + " to " + timeAtPrison;
+					timeAtPrison <- timeAtPrison + myself.severity;
+				} else if (resisting < 0) {
+					write "[Time" + time + "] Decreasing time at prison for " + name + " to " + timeAtPrison;
+					timeAtPrison <- timeAtPrison - myself.severity;
+				}
 				do goToPrison(myself.targetPrison);
-				write "bringing target to prison " + myself.targetPrison.name;
+				write "Bringing target to prison " + myself.targetPrison.name;
 				myself.targetPoint <- prisonLocation;
+				resisting <- 0;
 			}
 		}
 	}
@@ -1816,6 +1981,8 @@ species SecurityGuard skills: [moving, fipa] {
 			write self.name + ": here at capture bad guest action of guard for guest: " + badGuest.name;
 			capturedGuest <- badGuest;
 			targetPrison <- Prison closest_to(location);
+			currentStage <- nil;
+			currentBar <- nil;
 		}
 	}
 	
@@ -1826,12 +1993,34 @@ species SecurityGuard skills: [moving, fipa] {
 	}
 	
 	Guest findBadGuest {
-		list<Guest> guestList <- DancingGuest at_distance(VIEW_DISTANCE);
-		add all: ChillingGuest at_distance(VIEW_DISTANCE) to: guestList;
-		add all: Photographer at_distance(VIEW_DISTANCE) to: guestList;
-		add all: Merchant at_distance(VIEW_DISTANCE) to: guestList;
+		list<Guest> guestList <- [];
+		if (isAtBar()) {
+			add all: DancingGuest at_distance(0) to: guestList;
+			add all: ChillingGuest at_distance(0) to: guestList;
+			add all: Photographer at_distance(0) to: guestList;
+			add all: Merchant at_distance(0) to: guestList;		
+		} else if (isAtStage()) {
+			add all: DancingGuest at_distance(0) to: guestList;
+			add all: ChillingGuest at_distance(0) to: guestList;
+			add all: Photographer at_distance(0) to: guestList;
+			add all: Merchant at_distance(0) to: guestList;
+		} else {
+			add all: DancingGuest at_distance(VIEW_DISTANCE) to: guestList;
+			add all: ChillingGuest at_distance(VIEW_DISTANCE) to: guestList;
+			add all: Photographer at_distance(VIEW_DISTANCE) to: guestList;
+			add all: Merchant at_distance(VIEW_DISTANCE) to: guestList;	
+		}
 		Guest guest <- guestList first_with (each.isBad() = true);
 		return guest;
+
+	}
+	
+	bool isAtBar {
+		return currentBar != nil and location = currentBar.location;
+	}
+	
+	bool isAtStage {
+		return currentStage != nil and location = currentStage.location;
 	}
 	
 	aspect info {
