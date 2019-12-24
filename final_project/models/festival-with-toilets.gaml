@@ -45,18 +45,24 @@ global {
 	string GET_OUT_OF_TOILET <- "Your turn in the toilet has ended.";
 	string QUEUE_MOVING_FORWARD <- "The queue is moving, you can move.";
 
-	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest) + length(Photographer)};
+	int numOfGuests -> {length(DancingGuest) + length(ChillingGuest) + length(Photographer)};
     int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
     						+ ChillingGuest count (each.happiness > 0.8)
     						+ Photographer count (each.happiness > 0.8);
+
     int drunkPeople update: DancingGuest count (each.drunkness > 0.8) 
     						+ ChillingGuest count (each.drunkness > 0.8)
     						+ Photographer count (each.drunkness > 0.8);
+
+	
+	float initialLevel <- 2.25;
+    float happinessLevel <- 0.0 update: 0.0;
+	int globalWaitingTime <- 0 update: 0;
 	
 	int numberOfGuests <- 10;
-	int barsNum <- 5;
-	int stageNum <- 5;
-	int toiletsNum <- 5;
+	int barsNum <- 20;
+	int stageNum <- 20;
+	int toiletsNum <- 10;
 	int currentBarsNum -> {length(Bar)};
 	
 	// print debug logs or not
@@ -70,7 +76,7 @@ global {
 		create DancingGuest number: numberOfGuests;
 		create ChillingGuest number: numberOfGuests;
 		create Photographer number: numberOfGuests;
-		create SecurityGuard number: numberOfGuests;
+//		create SecurityGuard number: numberOfGuests;
 		create Merchant number: numberOfGuests;
 		create Bar number: barsNum;
 		create Prison number: 1;
@@ -84,6 +90,14 @@ global {
  */
 species Guest skills: [moving, fipa] {
 	
+	reflex updateHappiness {
+		happinessLevel <- happinessLevel + happiness;
+	}
+	
+	reflex updateWaitingTime {
+		globalWaitingTime <- globalWaitingTime + waitingTime;
+	}
+	
 	image_file my_icon;
 	
 	rgb myColor <- #red;
@@ -94,7 +108,9 @@ species Guest skills: [moving, fipa] {
 	bool hasRequestedToUseToilet <- false;
 	bool canEnterToilet <- false;
 	
-	int toiletUrgency <- TOILET_URGENCY update: cycle mod 20 = 0 ? toiletUrgency - 1 : toiletUrgency;
+	int waitingTime;
+	
+	int toiletUrgency <- TOILET_URGENCY update: cycle mod 20 = 0 ? toiletUrgency - rnd(1, 5) : toiletUrgency;
 	
 	int size <- 1;
 	
@@ -217,6 +233,7 @@ species Guest skills: [moving, fipa] {
 		currentToilet <- nil;
 		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
 		target <- nil;
+		waitingTime <- 0;
 	}
 	
 	bool isAtToiletEntrance {
@@ -259,6 +276,7 @@ species Guest skills: [moving, fipa] {
 						do endTimeInToilet;
 						do end_conversation message: i contents: ["Alright."];
 					} else if (msg = QUEUE_MOVING_FORWARD) {
+						waitingTime <- waitingTime + 1;
 						write "Time[" + time + "]: " + name + " moves forward to enter toilet.";
 						
 						// has reached the place it was supposed to take in the queue
@@ -279,11 +297,10 @@ species Guest skills: [moving, fipa] {
 			string senderType <- string(type_of(agree.sender));
 			switch(senderType) {
 				match Toilet.name {
-					write "test";
 					string msg <- agree.contents[0] as string;
 		 			if (msg = TOILET_IS_FREE) {
 		 				write "Time[" + time + "]: " + name + " can enter toilet.";
-		 				happiness <- happiness + 1.0;
+		 				happiness <- happiness + 0.5;
 		 				canEnterToilet <- true;
 		 				target <- currentToilet.location;
 					}
@@ -297,7 +314,8 @@ species Guest skills: [moving, fipa] {
 				match Toilet.name {
 					string msg <- refuse.contents[0] as string;
 		 			if (msg = TOILET_IS_TAKEN) {
-		 				happiness <- happiness - 1.0;
+		 				waitingTime <- waitingTime + 1;
+		 				happiness <- happiness - 0.5;
 		 				int queueSize <- length(currentToilet.queue);
 		 				float xPoint <- 0.0;
 		 				if (queueSize <= 1) {
@@ -1918,6 +1936,10 @@ species Bar skills: [fipa] {
 		draw my_icon size: 5;
 	}
 	
+	reflex reloadBeer when: cycle mod 500 = 0 {
+		beer <- beer + 20;
+	}
+	
 	reflex reply_beer_requests when: (!empty(requests)) {
 		loop r over: requests {
 			agent friendAtBar <- nil;
@@ -2013,7 +2035,6 @@ species Toilet skills: [fipa] {
 		loop i from: 0 to: length(queue) - 1 {
 			if (i < length(queue) - 1) {
 				queue[i] <- queue[i + 1];
-				write "Sending message to " + queue[i].name + " to move forward on the queue";
 				do start_conversation to: [queue[i]] protocol: "no-protocol" performative: "inform" contents:[QUEUE_MOVING_FORWARD];
 			}
 		}
@@ -2033,18 +2054,18 @@ species Toilet skills: [fipa] {
 experiment fest_experiment type: gui {
 //	parameter "Initial number of bars: " var: barsNum category: "Fun places at the festival" ;
 	output {
-//		display main_display {
-//            species Guest aspect: icon;
-//			species DancingGuest aspect: icon;
-//			species ChillingGuest aspect: icon;
-//			species Bar aspect: icon;
-//			species Stage aspect: icon;
-//			species Photographer aspect: icon;
-//			species Prison aspect: icon;
-//			species SecurityGuard aspect: icon;
-//			species Merchant aspect: icon;
-//			species Toilet aspect: icon;
-//        }
+		display main_display {
+            species Guest aspect: icon;
+			species DancingGuest aspect: icon;
+			species ChillingGuest aspect: icon;
+			species Bar aspect: icon;
+			species Stage aspect: icon;
+			species Photographer aspect: icon;
+			species Prison aspect: icon;
+			species SecurityGuard aspect: icon;
+			species Merchant aspect: icon;
+			species Toilet aspect: icon;
+        }
 
         display info_display {
             species Guest aspect: info;
@@ -2059,20 +2080,14 @@ experiment fest_experiment type: gui {
 			species Toilet aspect: info;
         }
 		
-//		display Happiness_information refresh: every(5#cycles) {
-//			chart "Happiness and drunkness correlation" type: series size: {1,0.5} position: {0, 0} {
-//                data "number_of_amused_guests" value: amusedGuests color: #blue;
-//                data "number_of_drunk_guests" value: drunkPeople color: #red;
-//            }
-//            chart "DancingGuest Happiness Distribution" type: histogram background: #lightgray size: {0.5,0.5} position: {0, 0.5} {
-//                data "[0;0.25]" value: DancingGuest count (each.happiness <= 0.25) color:#blue;
-//                data "[0.25;0.5]" value: DancingGuest count ((each.happiness > 0.25) and (each.happiness <= 0.5)) color:#blue;
-//                data "[0.5;0.75]" value: DancingGuest count ((each.happiness > 0.5) and (each.happiness <= 0.75)) color:#blue;
-//                data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
-//            }
-//		}
-		monitor "Number of amused guests: " value: amusedGuests;
-    	monitor "All guests: " value: numOfGuests;
+		display Happiness_information refresh: every(5#cycles) {
+        	chart "Happiness vs waiting time" type: series style: spline {
+        		data "happiness" value: happinessLevel color: #green marker: false;
+        		data "waiting time" value: globalWaitingTime color: #red marker: false;
+        	}
+		}
+    	monitor "Happiness: " value: happinessLevel;
+    	monitor "Waiting time: " value: globalWaitingTime;
 	}
 	
 	

@@ -38,17 +38,21 @@ global {
 	string DECLINE_PHOTO <- "No, I am not in the mood.";
 
 	int numOfGuests -> {length (DancingGuest) + length(ChillingGuest) + length(Photographer)};
-    int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
-    						+ ChillingGuest count (each.happiness > 0.8)
-    						+ Photographer count (each.happiness > 0.8);
-    int drunkPeople update: DancingGuest count (each.drunkness > 0.8) 
-    						+ ChillingGuest count (each.drunkness > 0.8)
-    						+ Photographer count (each.drunkness > 0.8);
+//    int amusedGuests update: DancingGuest count (each.happiness > 0.8) 
+//    						+ ChillingGuest count (each.happiness > 0.8)
+//    						+ Photographer count (each.happiness > 0.8);
+//    int drunkPeople update: DancingGuest count (each.drunkness > 0.8) 
+//    						+ ChillingGuest count (each.drunkness > 0.8)
+//    						+ Photographer count (each.drunkness > 0.8);
 	
 	int numberOfGuests <- 10;
 	int barsNum <- 5;
 	int stageNum <- 5;
 	int currentBarsNum -> {length(Bar)};
+	
+    float happinessLevel <- 0.0 update: 0.0;
+    float drunkennessLevel <- 0.0 update: 0.0;
+	
 	
 	// print debug logs or not
 	bool debug <- true;
@@ -61,7 +65,7 @@ global {
 		create DancingGuest number: numberOfGuests;
 		create ChillingGuest number: numberOfGuests;
 		create Photographer number: numberOfGuests;
-		create SecurityGuard number: numberOfGuests;
+		create SecurityGuard number: 50;//numberOfGuests;
 		create Merchant number: numberOfGuests;
 		create Bar number: barsNum;
 		create Prison number: 1;
@@ -73,7 +77,13 @@ global {
  * Gues Species
  */
 species Guest skills: [moving, fipa] {
+	reflex updateHappiness {
+		happinessLevel <- happinessLevel + happiness;
+	}
 	
+	reflex updateDrunkennes {
+		drunkennessLevel <- drunkennessLevel + drunkness;
+	}
 	image_file my_icon;
 	
 	rgb myColor <- #red;
@@ -401,7 +411,6 @@ species DancingGuest parent: Guest {
 						string msg <- "Yes, let's dance!";
 						do accept_proposal message: propose contents: [msg];
 						write name + " is dancing now at stage " + currentStage.name + " with " + propose.sender + ". Sends a response: " + msg;
-						// TODO maybe add countdown?
 						do danceAtStage;
 					}
 				}
@@ -597,10 +606,6 @@ species DancingGuest parent: Guest {
            	hasApproachedMerchant <- true;
    		}
    }
-   
-   action meetMerchantAtStage(Merchant m) {
-		// TODO
-   }
 	
 	action aloneAtBar {
 		do askBarForBeer(1);
@@ -732,24 +737,6 @@ species ChillingGuest parent: Guest {
 		remove self from: agentsAtBar;
 		if (empty(agentsAtBar) or length(agentsAtBar) = 0) {
 			do aloneAtBar;
-		} else {
-			loop agentAtBar over: agentsAtBar {
-				string agentType <- string(type_of(agentAtBar));
-				switch(agentType) {
-					match DancingGuest.name {
-						// TODO
-//						do meetDancingGuestAtBar(agentAtBar as DancingGuest);
-					}
-					match ChillingGuest.name {
-						// TODO
-//						do meetChillingGuestAtBar(agentAtBar as ChillingGuest);
-					}
-					match Photographer.name {
-						// TODO
-//						do meetPhotographerAtBar(agentAtBar as Photographer);
-					}
-				}
-			}
 		}	
 	}
 	
@@ -786,9 +773,6 @@ species ChillingGuest parent: Guest {
 						write "Here at handle interactions of the chilling guest after invite for dance";
 						do handleDancingGuestAtStage(q);
 					}
-				}
-				match ChillingGuest.name {
-					// TODO not implemented
 				}
 			}
 		}
@@ -869,7 +853,6 @@ species ChillingGuest parent: Guest {
 				}
 				match Photographer.name {
 					if (agree.contents[0] = "BAR" and agree.contents[1] = currentBar) {
-						// TODO
 						happiness <- happiness + 0.05;
 					} else if (agree.contents[0] = "STAGE" and agree.contents[1] = currentStage) {
 						write "[Time: " + time + "] " + agree.sender + " will now take a picture of me." + name;  
@@ -886,7 +869,6 @@ species ChillingGuest parent: Guest {
 			switch(senderType) {
 				match Photographer.name {
 					if (refuse.contents[0] = "BAR" and refuse.contents[1] = currentBar) {
-						// TODO
 						happiness <- happiness - 0.05;
 					} else if (refuse.contents[0] = "STAGE" and refuse.contents[1] = currentStage) {
 						write "[Time: " + time + "] " + refuse.sender + " decided not to take a picture of me." + name;  
@@ -902,7 +884,6 @@ species ChillingGuest parent: Guest {
 			switch(senderType) {
 				match DancingGuest.name {
 					if(inform.contents[0] = "STAGE" and inform.contents[1] = currentStage) {
-						// TODO should call security guard?
 						string msg <- "I am leaving!";
 						write "Time[" + time + "]: " + name + ": " +  msg + " " + inform.sender + " is following me!";
 						happiness <- happiness - 0.2;
@@ -1215,7 +1196,6 @@ species Photographer parent: Guest {
 						do meetDancingGuestAtStage(agentAtStage as DancingGuest);
 					}
 					match ChillingGuest.name {
-						// TODO
 						do meetChillingGuestAtStage(agentAtStage as ChillingGuest);
 					}
 					match Photographer.name {
@@ -1313,7 +1293,6 @@ species Photographer parent: Guest {
 					}
 					match ChillingGuest.name {
 						if (q.contents[0] = "BAR" and q.contents[1] = currentBar and q.contents[2] = PICTURE_QUERY) {
-							// TODO
 						} else if(q.contents[0] = "STAGE" and q.contents[1] = currentStage and q.contents[2] = PICTURE_QUERY) {
 							do handleChillingGuestAtStage(q);
 						}
@@ -2080,6 +2059,11 @@ species Bar skills: [fipa] {
 		draw my_icon size: 5;
 	}
 	
+	reflex reloadBeer when: cycle mod 500 = 0 {
+		beer <- beer + 20;
+	}
+	
+	
 	reflex reply_beer_requests when: (!empty(requests)) {
 		loop r over: requests {
 			agent friendAtBar <- nil;
@@ -2150,19 +2134,17 @@ experiment fest_experiment type: gui {
 			species Merchant aspect: info;
         }
 		
-//		display Happiness_information refresh: every(5#cycles) {
-//			chart "Happiness and drunkness correlation" type: series size: {1,0.5} position: {0, 0} {
-//                data "number_of_amused_guests" value: amusedGuests color: #blue;
-//                data "number_of_drunk_guests" value: drunkPeople color: #red;
-//            }
-//            chart "DancingGuest Happiness Distribution" type: histogram background: #lightgray size: {0.5,0.5} position: {0, 0.5} {
-//                data "[0;0.25]" value: DancingGuest count (each.happiness <= 0.25) color:#blue;
-//                data "[0.25;0.5]" value: DancingGuest count ((each.happiness > 0.25) and (each.happiness <= 0.5)) color:#blue;
-//                data "[0.5;0.75]" value: DancingGuest count ((each.happiness > 0.5) and (each.happiness <= 0.75)) color:#blue;
-//                data "[0.75;1]" value: DancingGuest count (each.happiness > 0.75) color:#blue;
-//            }
-//		}
-		monitor "Number of amused guests: " value: amusedGuests;
+		display Happiness_information refresh: every(5#cycles) {
+			chart "Happiness and drunkness correlation (with bar reload)" type: series size: {1,0.5} position: {0, 0} {
+                data "Happiness level" value: happinessLevel color: #blue;
+                data "Drunkness level" value: drunkennessLevel color: #red;
+            }
+//            
+            chart "Number of guards related to drunkness" type: series size: {1,0.5} position: {0, 0} {
+//                data "Happiness level" value: happinessLevel color: #blue;
+                data "Drunkness level" value: drunkennessLevel color: #red;
+            }
+		}
     	monitor "All guests: " value: numOfGuests;
 	}
 	
