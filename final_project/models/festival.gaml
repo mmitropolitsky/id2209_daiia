@@ -86,12 +86,15 @@ species Guest skills: [moving, fipa] {
 	
 	float goToBar <- 0.2 with_precision 2;
 	float goToStage <- 0.2 with_precision 2;
-	bool goToPrison <- false;
+//	bool goToPrison <- false;
+	Prison prison <- nil;
 	
 	Stage currentStage <- nil;
 	Bar currentBar <- nil;
 	point randomPoint <- nil;
 	
+	
+	int VIEW_DISTANCE <- 150;
 	int TIME_AT_BAR <- 100;
 	int TIME_AT_STAGE <- 100;
 	int TIME_AT_PRISON <- 10;
@@ -99,6 +102,14 @@ species Guest skills: [moving, fipa] {
 	int timeAtBar <- TIME_AT_BAR update: isAtBar() ? timeAtBar - 1 : timeAtBar min: 0;
 	int timeAtStage <- TIME_AT_STAGE update: isAtStage() ? timeAtStage - 1 : timeAtStage min: 0;
 	int timeAtPrison <- TIME_AT_PRISON update: isAtPrison() ? timeAtPrison - 1 : timeAtPrison min: 0;
+	
+	
+	// USE THIS ONE WHEN INTERACTING WITH SECURITY GUARDS
+	bool isFollowingGuest <- false;
+	bool isBeingHeld <- false;
+	bool isReporting <- false;
+	
+	Guest badGuest <- nil;
 	
 	aspect info {
 		draw sphere(size) at: location color: myColor border: #black;
@@ -109,20 +120,55 @@ species Guest skills: [moving, fipa] {
 		draw my_icon size: 2 * size;
 	}
 	
-	reflex defaultBehaviour when: currentStage = nil and currentBar = nil {
+	
+	
+	reflex defaultBehaviour when: currentStage = nil and currentBar = nil and prison = nil and !isReporting {
 		do wander;
-		if (randomPoint != nil) {
-			do goto target: randomPoint;
-			if (self.location = randomPoint) {
-				randomPoint <- nil;
+		badGuest <- findBadGuest();
+		if (badGuest != nil) {
+			write "[Time: "+ time + "] "+ name + " is reporting " + badGuest.name;
+			isReporting <- true;
+			ask badGuest {
+				self.isBeingHeld <- true;
 			}
-		} else if (goToPrison) {
-			do goto target: one_of(Prison);
-		} else if (flip(goToStage)) {
-			currentStage <- one_of(Stage);
-		} else if (flip(goToBar)) {
-			currentBar <- one_of(Bar);
+		} else {
+			if (randomPoint != nil) {
+				do goto target: randomPoint;
+				if (self.location = randomPoint) {
+					randomPoint <- nil;
+				}
+			} else if (flip(goToStage)) {
+				currentStage <- one_of(Stage);
+			} else if (flip(goToBar)) {
+				currentBar <- one_of(Bar);
+			}
 		}
+		
+	}
+	
+	reflex report when: isReporting and badGuest != nil {
+		SecurityGuard closestGuard <- SecurityGuard closest_to(location);
+		do goto target: closestGuard;
+		if(closestGuard != nil and self distance_to(closestGuard) < 3) {
+			write "[Time: " + time + "] " + name + " is reporting " + badGuest.name + " to " + closestGuard.name;
+			Guest tmp <- badGuest;
+			isReporting <- false;
+			badGuest <- nil;
+			ask closestGuard {
+				do captureBadGuest(tmp);
+			}
+			
+		}
+		
+	}
+	
+	Guest findBadGuest {
+		list<Guest> guestList <- DancingGuest at_distance(VIEW_DISTANCE);
+		add all: ChillingGuest at_distance(VIEW_DISTANCE) to: guestList;
+		add all: Photographer at_distance(VIEW_DISTANCE) to: guestList;
+		add all: Merchant at_distance(VIEW_DISTANCE) to: guestList;
+		Guest guest <- guestList first_with (each.isBad() = true);
+		return guest;
 	}
 	
 	// Bar related
@@ -143,7 +189,7 @@ species Guest skills: [moving, fipa] {
 	}
 	
 	bool isAtBar {
-		return currentBar != nil and location = currentBar.location;
+		return currentBar != nil and location = currentBar.location and !isReporting;
 	}
 	
 	// Stage related
@@ -164,19 +210,51 @@ species Guest skills: [moving, fipa] {
 	}
 	
 	bool isAtStage {
-		return currentStage != nil and location = currentStage.location;
+		return currentStage != nil and location = currentStage.location and !isReporting;
 	}
 	
 	
 	// Prison related
+	reflex isAtPrison when: isAtPrison() {
+		happiness <- happiness - 0.5;
+		drunkness <- drunkness - 0.5;
+		if (timeAtPrison = 0) {
+			do endTimeAtPrison();
+		}
+	}
+	
 	bool isAtPrison {
-		Prison prison <- one_of(Prison);
-		list<agent> agentsInPrison <- agents_overlapping(prison);
-		return agentsInPrison contains self;
+		return prison != nil and location = prison.location;
+	}
+	
+	action endTimeAtPrison {
+		write "[Time: "+ time + " end time at prison for " + name;
+		timeAtPrison <- TIME_AT_PRISON;
+		prison <- nil;
+		isBeingHeld <- false;
+		randomPoint <- { rnd(0.0, 100.0), rnd(0.0, 100.0) };
+	}
+	
+	reflex goToPrison when: prison != nil {
+		currentStage <- nil;
+		currentBar <- nil;
+		randomPoint <- nil;
+		do goto target: prison;
 	}
 	
 	bool isBad {
-		return drunkness > 0.8 and loudness > 0.8;
+		return ((drunkness > 0.8 and loudness > 0.8) or isFollowingGuest = true) and isBeingHeld = false;
+	}
+	
+	bool isBadInTheEyesOfThePolice {
+		write "SDFG: " + (((drunkness > 0.8 and loudness > 0.8) or isFollowingGuest = true));
+		return ((drunkness > 0.8 and loudness > 0.8) or isFollowingGuest = true);
+	}
+	
+	action goToPrison(Prison prisn) {
+		self.prison <- prisn;
+		isBeingHeld <- true;
+		write "" + prisn + "here, prison is: " + self.prison;
 	}
 	
 	action drinkBeer(int quantity) {
@@ -209,8 +287,6 @@ species DancingGuest parent: Guest {
 	float confident <- rnd(0.5, 1.0) with_precision 2;
 	float generous <- rnd(0.5, 1.0) with_precision 2;
 	
-	// USE THIS ONE WHEN INTERACTING WITH SECURITY GUARDS
-	bool isFollowingGuest <- false;
 	
 	bool hasApproachedMerchant <- false;
 
@@ -370,13 +446,6 @@ species DancingGuest parent: Guest {
 				}
 			}
 			string msgContent <- propose.contents[0];
-		}
-		
-		// at bar, security guard reaches us and our happiness goes down
-		loop request over: requests {
-			if (request.contents[0] = SECURITY_GUARD_CAUGHT_YOU) {
-				happiness <- happiness - 0.3;
-			}
 		}
 		
 		do handleBeerOrderedByFriend;
@@ -1699,43 +1768,70 @@ species Merchant parent: Guest {
 species SecurityGuard skills: [moving, fipa] {
 	image_file my_icon <- image_file("../includes/data/security-guard.png");
 	
+	int VIEW_DISTANCE <- 200;
+	
 	init {
 		speed <- 10.0 #km/#h;
 	}
 	
 	rgb guardColor <- #black;
 	Guest capturedGuest <- nil;
-	Prison prison <- Prison closest_to(location);
+	Prison targetPrison <- nil;
+	point targetPoint <- nil;
 	
-	reflex wait when: capturedGuest = nil {
+	reflex wait when: targetPoint = nil {
 		do wander;
-		do handleLoudAndNoisyGuest;
+		Guest guest <- self.findBadGuest();
+		if (guest != nil) {
+			write self.name + ": entering capture bad guest action: " + guest.name;
+			do captureBadGuest(guest);
+		}
 	}
+	
+	reflex moveToTarget when: targetPoint != nil {
+		do goto target: targetPoint;
+		if (location = targetPoint) {
+			targetPoint <- nil;
+		}
+	}
+	
 	
 	reflex capture when: capturedGuest != nil {
 		write self.name + " capturing target " + capturedGuest.name;
+		
 		do goto target: capturedGuest;
 		
-		if (capturedGuest.isBad() and self distance_to(capturedGuest) < 3) {
-			do start_conversation to: [capturedGuest] protocol: 'fipa-request' performative: 'request' contents: [SECURITY_GUARD_CAUGHT_YOU];
-			capturedGuest <- nil;
+		if (capturedGuest.isBadInTheEyesOfThePolice() and self distance_to(capturedGuest) < 3) {
+			ask capturedGuest {
+				// escort to prison
+				do goToPrison(myself.targetPrison);
+				write "bringing target to prison " + myself.targetPrison.name;
+				myself.targetPoint <- prisonLocation;
+			}
 		}
 	}
 
 	action captureBadGuest(Guest badGuest) {
 		if (self != nil and badGuest != nil) {
-			 write self.name + ": here at capture bad guest action of guard for guest: " + badGuest.name;
+			write self.name + ": here at capture bad guest action of guard for guest: " + badGuest.name;
 			capturedGuest <- badGuest;
+			targetPrison <- Prison closest_to(location);
 		}
 	}
 	
-	action handleLoudAndNoisyGuest {
-		if (!empty(informs)) {
-			message msg <- informs[0];
-			write self.name + ": entering capture bad guest action: " + informs[0].sender;
-			capturedGuest <- informs[0].sender;
-			do end_conversation message: msg contents: [SECURITY_GUARD_HEADING_TO_YOU];
-		}
+	reflex getOutOfPrison when: targetPrison != nil and location = targetPrison.location {
+		write self.name + " in prison and should go out to capture other bad guys";
+		capturedGuest <- nil;
+		targetPoint <- {rnd(0.0, 100.0), rnd(0.0, 100.0)};
+	}
+	
+	Guest findBadGuest {
+		list<Guest> guestList <- DancingGuest at_distance(VIEW_DISTANCE);
+		add all: ChillingGuest at_distance(VIEW_DISTANCE) to: guestList;
+		add all: Photographer at_distance(VIEW_DISTANCE) to: guestList;
+		add all: Merchant at_distance(VIEW_DISTANCE) to: guestList;
+		Guest guest <- guestList first_with (each.isBad() = true);
+		return guest;
 	}
 	
 	aspect info {
